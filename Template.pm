@@ -25,7 +25,7 @@ use POSIX qw(strftime);
 
 use vars qw($VERSION);
 
-$VERSION = '1.0';
+$VERSION = '1.0.1';
 
 
 #####
@@ -135,8 +135,12 @@ sub recursive_interpret{
 
 	} elsif ( $tokenMatch = $self->match_include($token) ) {
 	    # $tokenMatch contains the filename to include
-            my $filename = "$self->{path}/$tokenMatch";
-	    $self->do_insert($data, $filename);
+	    $self->do_include($data, $tokenMatch);
+            shift @tokens;
+
+	} elsif ( $tokenMatch = $self->match_variableInclude($token) ) {
+	    # $tokenMatch contains the variable name containing the file
+	    $self->do_variableInclude($data, $tokenMatch);
             shift @tokens;
 
 	} elsif ( $tokenMatch = $self->match_repeat($token) ) {
@@ -149,7 +153,7 @@ sub recursive_interpret{
 	    $self->do_repeat(@context->[0], $data->{$tokenMatch});
 	    # Restore token list at the point *after* the </repeat>
 	    shift @context;
-	    $text = join '', @context;
+	    $text = join '</repeat>', @context;
 	    @tokens = $self->tokenize($text);
 
 	} elsif ( $tokenMatch = $self->match_with($token) ) {
@@ -162,7 +166,7 @@ sub recursive_interpret{
 	    $self->do_with(@context->[0], $data->{$tokenMatch}, $tokenMatch);
 	    # Restore the token list at the point *after* the </with>
 	    shift @context;
-	    $text = join '', @context;
+	    $text = join '</with>', @context;
 	    @tokens = $self->tokenize($text);
 
 	} else {
@@ -191,6 +195,8 @@ sub tokenize{
 	      | <assign [^\/]*\/>
 	      # include tag
 	      | <include [^\/]*\/>
+	      # variableInclude tag
+	      | <variableInclude [^\/]*\/>
 	      # repeat context
 	      | <repeat [^>]*>
 	      # with context
@@ -208,7 +214,7 @@ sub match_variable{
     my ($self, $token) = @_;
 
     # token must match $ then { or ( a variable name and ) or }
-    if ( $token =~ /^\$[{\(]([\w]+)[}\)]/io) {
+    if ( $token =~ /^\$[{\(](\w+)[}\)]$/io) {
 	return $1;
     } else {
 	return undef;
@@ -229,11 +235,11 @@ sub do_variable{
     } else { 
 	# not in the namespace, 
 	# so try to match "magic" tokens NOW, DATE, and TIME
-	if ( $variable =~ /now/i ) {
+	if ( $variable =~ /^now$/i ) {
 	    $self->{out} .= localtime;
-	} elsif ( $variable =~ /date/i ) {
+	} elsif ( $variable =~ /^date$/i ) {
 	    $self->{out} .= strftime("%x",localtime);
-	} elsif ( $variable =~ /time/i ) {
+	} elsif ( $variable =~ /^time$/i ) {
 	    $self->{out} .= strftime("%X",localtime);
 	} else {
 	    $self->{out} .= "<!-- Variable $variable not found -->\n";
@@ -251,7 +257,7 @@ sub match_assign{
     my ($self, $token) = @_;
     
     # token must start with <assign then "stuff" then name="..."  ... />
-    if ( $token =~ /^<assign.*?\s+name=\"([\w]+)\"[^\/]*\/>/io) {
+    if ( $token =~ /^<assign.*?\s+name=\"(\w+)\"[^\/]*\/>$/io) {
 	return $1;
     } else {
   	return undef;
@@ -267,13 +273,14 @@ sub match_assign{
 sub do_assign{
     my ($self, $data, $variable, $token) = @_;
 
-    if ( $token =~ /^<assign.*?\s+value=\"(.+?)\".*?\/>/io) {
+    if ( $token =~ /^<assign.*?\s+value=\"(.+?)\".*?\/>$/io) {
 	$data->{$variable} = $1;
     } else {
 	$self->{out} .= "<!-- Assign to $variable didn't have a value --> \n";
 	$self->{out} .= $token;
     }
 }
+
 
 #####
 # Match_Include: Does the token match an <include ...> tag?
@@ -284,7 +291,7 @@ sub match_include{
     my ($self, $token) = @_;
     
     # token must start with <include ... src="..."  ... />
-    if ( $token =~ /^<include.*?\s+src=\"([\w_.]+)\"[^\/]*\/>/io) {
+    if ( $token =~ /^<include.*?\s+src=\"(.+)\"[^\/]*\/>$/io) {
 	return $1;
     } else {
   	return undef;
@@ -293,23 +300,73 @@ sub match_include{
 
 
 #####
-# Do_Insert: Inserts the filename specified as a parsed template
+# Do_Include: Includes the filename specified as a parsed template
 #
 # Pre: Passed the data as a hash and a filename
 # Post: Places the recursively-parsed text or an error message into $self->{out}
-sub do_insert{
-    my ($self, $data, $filename) = @_;
+sub do_include{
+    my ($self, $data, $rawFilename) = @_;
 
+    # match_include is pretty liberal about includes for speed reasons
+    # But we never want to go outside of the defined $self->{path} 'jail'
+    # for security reasons (even if we want to allow subdirectories of it)
+    if ( $rawFilename =~ /^\//o) {
+	$self->{out} .= "<!-- Template file $rawFilename not allowed -->\n";
+	return;
+    } elsif ( $rawFilename =~ /\.\./o) {
+	$self->{out} .= "<!-- Template file $rawFilename not allowed -->\n";
+	return;
+    }
+
+    # OK, we're safe now, we don't have an absolute path or a .. sequence
+    my $filename = $self->{path} . "/" . $rawFilename;
+    
     if ( (-f $filename) && (open (FILE, $filename)) ) {
 	local($/) = undef;
 	my $include_text = <FILE>;
 	close(FILE);
 	
 	# recurse on the included file
-	$self->recursive_interpret($include_text, $data)
-	} else {
-	    $self->{out} .= "<!-- Template file $filename not readable: $! -->\n";
-	}
+	$self->recursive_interpret($include_text, $data);
+    } else {
+	$self->{out} .= "<!-- Template file $filename not readable: $! -->\n";
+    }
+}
+
+#####
+# Match_VariableInclude: Does the token match an <variableInclude ...> tag?
+#
+# Pre: Passed the token to check
+# Post: Returns the varible of the filename to include if it matches, undef otherwise
+sub match_variableInclude{
+    my ($self, $token) = @_;
+    
+    # token must start with <variableInclude ... name="$..."  ... />
+    if ( $token =~ /^<variableInclude.*?\s+name=\"(\w+)\"[^\/]*\/>$/io) {
+	return $1;
+    } else {
+  	return undef;
+    }
+}
+
+
+#####
+# Do_VariableInclude: Includes the variable filename specified as a parsed template
+#
+# Pre: Passed the data as a hash and a variable of a filename
+# Post: Places the recursively-parsed text or an error message into $self->{out}
+sub do_variableInclude{
+    my ($self, $data, $variable) = @_;
+
+    my $filename;
+
+    if (defined $data->{$variable}) {
+	$filename = $data->{$variable};
+
+	$self->do_include($data, $filename);
+    } else { 
+	$self->{out} .= "<!-- VariableInclude variable $variable not found -->\n";
+    }
 }
 
 
@@ -322,7 +379,7 @@ sub match_repeat{
     my ($self, $token) = @_;
     
     # token must start with <repeat ... name="..." ...>
-    if ( $token =~ /^<repeat.*?\s+name=\"([\w_]+)\"[^>]*>/io) {
+    if ( $token =~ /^<repeat.*?\s+name=\"(\w+)\"[^>]*>$/io) {
 	return $1;
     } else {
   	return undef;
@@ -345,6 +402,12 @@ sub do_repeat{
 	    foreach $key ( sort (keys %{$data} ) ) {
 		$self->recursive_interpret($text, $data->{$key});
 	    }
+	#-- feh : 17.07.1999 : added ARRAY support
+	#
+	} elsif ( defined $data && ref($data) eq "ARRAY" ) {
+	    foreach my $hash_data ( @{$data} ) {
+		$self->recursive_interpret($text, $hash_data);
+	    }
 	} else {
 	    $self->{out} .= "<!-- Repeat namespace does not exist! -->\n";
 	    $self->{out} .= $text;
@@ -366,7 +429,7 @@ sub match_with{
     my ($self, $token) = @_;
 
     # token must start with <with ... name="..." ...>
-    if ( $token =~ /^<with.*?\s+name=\"([\w_]+)\"[^>]*>/io) {
+    if ( $token =~ /^<with.*?\s+name=\"(\w+)\"[^>]*>$/io) {
 	return $1;
     } else {
   	return undef;
@@ -386,7 +449,7 @@ sub do_with{
 	# do we actually have a hash to enter?
 	if ( defined $data && ref($data) eq "HASH" ) {
 	    $self->recursive_interpret($text, $data);
-	} elsif ( $tokenMatch =~ /env/i ) {
+	} elsif ( $tokenMatch =~ /^env$/i ) {
 	    # OK, so it wasn't defined, but maybe it's the magic "ENV" namespace
 	    $self->recursive_interpret($text, \%ENV);
 	} else {
@@ -428,6 +491,7 @@ XML::Template - Perl XML template instantiation
 
     <assign name="not_ok" value="ok"/>
     <include src="foobar.xmlt"/>
+    <variableInclude name="foobar"/>
 
     <repeat name="RESULTS">
       ${NUMBER}: ${RESULT}
@@ -479,6 +543,8 @@ $(variable) or ${variable} -- identifiers are word characters
 (including the underscore)
 
 <include src="filename" /> -- filename is rooted by the path given at new()
+
+<variableInclude name="variable"/> -- include the file pointed to by variable
 
 <assign name="variable" value="..."/> -- assign "..." to identifier "variable"
 <assign value="..." name="variable"/>

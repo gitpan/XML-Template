@@ -8,4 +8,5 @@ ${still_ok} 4
 ${RESULT} ${NUMBER}</repeat>
 <with name="with_test">${result} 10</with>
 <include src="foobar.xmlt"/>
+<variableInclude name="foobar"/>
 </template>

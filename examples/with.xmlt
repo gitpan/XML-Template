@@ -1,0 +1,6 @@
+<template>
+<with name="A">${var_a_1} </with>
+<with name="B">${var_b_1} </with>
+<with name="C">${var_c_1} </with>
+</template>
+

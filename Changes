@@ -1,5 +1,13 @@
 Revision history for Perl extension XML::Template.
 
+1.0.1  Wed Jul 21 12:33:37 1999
+	- Added variableInclude tag to include a tag with variable filename
+	- Added support for repeats through arrays, contributed by
+	  Frank Hoehne <HoehneF@ec1.bp.com>
+	- Fixed problems with magic tokens now, date, time as well as
+	  namepsace env, contributed by Frank Hoehne.
+	- Fixed problems with many <with></with> or <repeat></repeat> contexts.
+	- Added tests for above to test suite.
 1.0   Wed Jul 14 12:24:52 1999
 	- Released to CPAN (under GPL/Artistic)
 	- Finished POD Documentation and README

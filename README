@@ -75,13 +75,15 @@ WebMonkey article by Brian Slesinsky:
 http://www.hotwired.com/webmonkey/code/97/21/index2a.html
 
 However, this code differs not only in the eventual template language
-outlined in the article, it is not based in anyway on the code
+outlined in the article, it is not based in any way on the code
 mentioned in the article (available under a more restrictive license).
 
 Thanks are also necessary to eZiba.com, especially DeWitt Clinton
 <dewitt@eziba.com> for their feedback and for letting me develop this
 code on their dime.
 
+Thanks also go to Frank Hoehne <HoehneF@ec1.bp.com> for contributions
+and bug fixes.
 
 AUTHOR
 
