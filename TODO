@@ -1,0 +1,47 @@
+- Cache XML::XPath objects for XPath vars.
+- siteadmin configuration
+- Use XPath vars for config.
+
+- Add $var to subroutines param lists.
+
+- If you change xml-template.conf, changes might not be reflected in other
+cached scripts since they have values obtained from the older config file
+hardcoded in.  Need to rethink how to use info from config vars.  Example:
+User.pm: get_source
+
+
+- Email -> Mail
+
+- how to deal with reusing objects in nested variable tags?
+
+x 1.  Obtain domain name syrme.net.
+  2.  Register XML::Template with CPAN.
+x 3.  Set up CVS on sourceforge.
+  4.  Set up other sourceforge stuff.
+  5.  Work on syrme.net website.
+  6.  Work on syrme.net/xml-template website.
+  7.  Work on XML::Template.
+  8.  Create distribution and upload to CPAN.
+
+- How to handle conflicting cache entries across sources?  Is this an 
+isssue?
+
+- potential sql trojan horses in url's?
+
+Apache
+  - Load config, sources, parsers on startup.
+  - what else?
+
+Parser
+  - Ideally should not print white space a module tag.
+
+DB
+  - Test multiple keys.
+  - Add tablename. to field names in fields attrib.
+
+Condition
+  - work on switch
+
+Elements
+  File: create, delete, move, copy, append
+  Log

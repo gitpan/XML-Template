@@ -1,0 +1,122 @@
+                              XML::Template
+                                  v3.00
+
+       Copyright (c) 2002 Jonathan A. Waxman.  All rights reserved.
+
+          This is free software; you can redistribute it and/or
+             modify it under the same terms as Perl itself.
+
+
+NOTE: Because of apparent bugs in the way Perl 5.6.0 handles evals nested
+in other evals, XML::Template requires Perl 5.8.0.
+
+
+1.  INSTALL REQUIRED PERL MODULES
+---------------------------------
+
+The following Perl modules are required by XML::Template.  You must
+install at least the versions indicated below before XML::Template is
+installed.  They are all available from CPAN.
+
+  CGI 2.81,
+  Data::Dumper 2.12,
+  XML::Simple 1.08,
+  XML::Parser 2.31,
+  IO::String 1.01,
+  Mail::Mailer 1.47,
+  Parse::RecDescent 1.80,
+  DBI::Wrap 1.00
+
+2.  INSTALL XML::Template
+-------------------------
+
+Quick
+-----
+
+gunzip XML-Template-3.00.tar.gz
+tar xvf XML-Template-3.00.tar
+perl Makefile.PL
+make
+make install
+
+Details
+-------
+
+The above will make and install XML::Template in the standard locations.  
+Additionally, a sample configuration file and the siteadmin XHTML files 
+will be installed in /usr/local/xml-template.  See ExtUtils::MakeMaker 
+for instructions on how to install the XML::Template Perl modules in
+non-standard locations.  The two following Makefile.PL arguments are used 
+to override where the initial configuration file and siteadmin XHTML files 
+will be installed:
+
+  INSTALL_XMLT         The base directory for auxilliary XML::Template 
+                       files.  The default is /usr/local/xml-template.
+  INSTALL_XMLT_CONFIG  The directory where the initial configuration file 
+                       will be installed.  The default is INSTALL_XMLT.
+  INSTALL_XMLT_ADMIN   The directory where the siteadmin XHTML files will 
+                       be installed.  The default is INSTALL_XMLT/admin.
+
+For instance, if I wanted to install the auxilliary XML::Template files in 
+my home directory, I would do
+
+  perl Makefile.PL INSTALL_XMLT=/home/jowaxman/xml-template
+
+3.  MODIFY Config.pm
+-----------------------
+
+There are several configuration variables in Config.pm that you may need 
+to change.  Config.pm should be located in XML/Template under the Perl 
+library directory you installed XML::Template in.  If you installed the 
+configuration file into a non-standard directory, you will need to modify 
+the variable $CONFIGFILE.  See the man page for XML::Template::Config for 
+more information on the XML::Template configuration variables.
+
+4.  CREATE THE CACHE FILE DIRECTORY
+-----------------------------------
+
+XML::Template works by converting X(HT)ML to Perl code and then evaluating
+that Perl code to produce some output.  By default, XML::Template writes
+the Perl code it creates to files.  When XML::Template is requested to
+display an X(HT)ML file it has already converted to Perl code, it just
+loads the file and evaluates it.  This provides a huge performance
+increase.  The default cache file directory (defined in Config.pm) is
+/tmp/xml-template.  XML::Template will create this directory if it does
+not exist.  However, if you are using XML::Template to display web pages,
+you will need to modify the permissions on the cache file directory so
+your web server can read and write to it.  If you are running Apache, you
+should give the cache file directory read and write group access to the 
+web server user's primary group.  This is typically nobody or apache.
+
+5.  MODIFY xml-template.conf
+----------------------------
+
+XML::Template comes with a sample XML cofiguration file that defines the
+hosts that will be using XML::Template, the available data sources, the
+available subroutines, and most importantly the available namespaces.  
+You should check over the initial configuration file that is installed.  
+In particular, if you are using XML::Template to display web pages, you
+will need to modify the hosts entries.  Also, if you will be using the
+database related namespaces, you will need to create a database (see
+xml-template.sql) and password file and modify the source entry in the
+sources section as well as the sourcename data in the hosts section.  See
+the man page XML::Template::xml-config for more details.
+
+7.  SET UP YOUR WEB SERVER
+--------------------------
+
+If you will be using XML::Template to display web pages, you need to set
+up your web server so it knows how to display XHTML files.  In Apache this
+is done by adding something like the following to httpd.conf (add to a
+VirtualHost entry if this applies only to a specific virtual host):
+
+  AddHandler xhtml-handler .xhtml
+  Action xhtml-handler /xml-template.pl
+
+The Action provides a handler script to run when any .xhtml files are
+encountered.  The above example tells Apache to run the script
+xml-template.pl in the document root directory (defined elsewhere).
+
+A simple sample handler script, xml-template.pl, is provided with
+XML::Template.  You may need to modify this to suit your applications
+specific needs.
