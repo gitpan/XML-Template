@@ -1,12 +1,12 @@
+###############################################################################
 # XML::Template::Element
 #
-# Copyright (c) 2002 Jonathan A. Waxman <jowaxman@bbl.med.upenn.edu>
+# Copyright (c) 2002-2003 Jonathan A. Waxman <jowaxman@bbl.med.upenn.edu>
 # All rights reserved.
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.
-
-
+###############################################################################
 package XML::Template::Element;
 use base qw(XML::Template::Base);
 
@@ -18,7 +18,7 @@ use XML::Template::Config;
 
 =head1 NAME
 
-XML::Template::Element - XML::Template plug-in element base class.
+XML::Template::Element - XML::Template plugin element base class.
 
 =head1 SYNOPSIS
 
@@ -29,18 +29,18 @@ use XML::Template::Element;
 
 =head1 DESCRIPTION
 
-This module provides base functionality for XML::Template plug-in element
+This module provides base functionality for XML::Template plugin element
 modules.
 
 =head1 CONSTRUCTOR
 
-The first parameter of the constructor is hash containing namespace
-prefix/expanded namespace name/value pairs.  The second parameter is the
-current namespace.  The remaining named parameters are passed to the
-C<XML::Template::Base> constructor.  The constructor returns a reference
-to a new element object or undef if an error occurred.  If undef is
-returned, you can use the method C<error> to retrieve the error.  For
-instance:
+The first parameter of the constructor is hash containing local
+name/namespace pairs, i.e. the currently loaded namespaces.  The second
+parameter is the current namespace.  The remaining named parameters are
+passed to the L<XML::Template::Base> constructor.  The constructor returns
+a reference to a new element object or undef if an error occurred.  If
+undef is returned, you can use the method C<error> to retrieve the error.  
+For instance:
 
   my $element = XML::Template::Element->new ($namespaces, $namespace, %params)
     || die XML::Template::Element->error;
@@ -121,40 +121,6 @@ sub generate_named_params {
 
 =pod
 
-=head2 generate_xmlinfo_code
-
-  my $xmlinfo_code = $self->generate_xmlinfo_code ($self->{_xmlinfo});
-
-This method generates Perl code that creates the data structure that store
-current XML information (currently declared namespaces.  This is necessary
-for passing current XML information from the parse-time to run-time.  For
-instance, sometimes it is necessary to make the XML information current
-when an element module is called available when the code the element
-module generates is later evaluated.
-
-=cut
-
-sub generate_xmlinfo_code {
-  my $self    = shift;
-  my $xmlinfo = shift;
-
-  my $xmlinfo_code = "my \@xmlinfo;\n";
-  my $i = 0;  
-  foreach my $el (@$xmlinfo) {
-    $xmlinfo_code .= "  \$xmlinfo[$i]->{base}   = '$el->{base}';\n";
-    $xmlinfo_code .= "  \$xmlinfo[$i]->{prefix} = '$el->{prefix}';\n";
-    $xmlinfo_code .= "  \$xmlinfo[$i]->{nsname} = '$el->{nsname}';\n";
-    while (my ($key, $val) = each %{$el->{loaded_nsnames}}) {
-      $xmlinfo_code .= "  \$xmlinfo[$i]->{loaded_nsnames}->{$key} = '$val';\n";
-    }
-    $i++;
-  }
-
-  return $xmlinfo_code;
-}
-
-=pod
-
 =head2 get_attrib
 
   my $field = $self->get_attrib ($attribs, ['field', 'fields']) || 'undef';
@@ -179,22 +145,21 @@ sub get_attrib {
 
   my $value;
 
-  # Look up "<namespace>\01<attribname>" in attrib hash.
+  # Look up "{<namespace>}<attribname>" in attrib hash.
   foreach (@attribnames) {
-    my $attrib = "$self->{_namespace}\01$_";
+    my $attrib = "{$self->{_namespace}}$_";
     if (exists $attribs->{$attrib}) {
       $value = $attribs->{$attrib};
       delete $attribs->{$attrib} if $delete;
     }
   }
 
-  # Look up "\01<attribname>" in attrib hash.
+  # Look up "<attribname>" in attrib hash.
   if (! defined $value) {
     foreach (@attribnames) {
-      my $attrib = "\01$_";
-      if (exists $attribs->{$attrib}) {
-        $value = $attribs->{$attrib};
-        delete $attribs->{$attrib} if $delete;
+      if (exists $attribs->{$_}) {
+        $value = $attribs->{$_};
+        delete $attribs->{$_} if $delete;
         return $value;
       }
     }
@@ -213,22 +178,16 @@ sub strip {
   return $value;
 }
 
-
-1;
-
-
-__END__
-
 =pod
 
 =head1 AUTHOR
 
 Jonathan Waxman
-jowaxman@bbl.med.upenn.edu
+<jowaxman@bbl.med.upenn.edu>
 
 =head1 COPYRIGHT
 
-Copyright (c) 2002 Jonathan A. Waxman
+Copyright (c) 2002-2003 Jonathan A. Waxman
 All rights reserved.
 
 This program is free software; you can redistribute it and/or
@@ -236,3 +195,5 @@ modify it under the same terms as Perl itself.
 
 =cut
 
+
+1;

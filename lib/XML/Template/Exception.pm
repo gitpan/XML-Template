@@ -1,12 +1,12 @@
+###############################################################################
 # XML::Template::Exception
 #
-# Copyright (c) 2002 Jonathan A. Waxman <jowaxman@bbl.med.upenn.edu>
+# Copyright (c) 2002-2003 Jonathan A. Waxman <jowaxman@bbl.med.upenn.edu>
 # All rights reserved.
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.
-
-
+###############################################################################
 package XML::Template::Exception;
 
 
@@ -21,15 +21,15 @@ XML::Template::Exception - XML::Template exception handling class.
 
 =head1 SYNOPSIS
 
-use XML::Template::Exception;
+  use XML::Template::Exception;
 
-my $exception = XML::Template::Exception->new ('ERRORTYPE',
-                                               'This is the error info.');
-my $type = $exception->type;
-my $info = $exception->info;
-if ($exception->isa ('DB')) {
-  ...
-}
+  my $exception = XML::Template::Exception->new ('ERRORTYPE',
+                                                 'This is the error info.');
+  my $type = $exception->type;
+  my $info = $exception->info;
+  if ($exception->isa ('DB')) {
+    ...
+  }
 
 =head1 DESCRIPTION
 
@@ -39,16 +39,17 @@ here is some exception handling code from the DB Element module:
 
   \$result = \$db->select (Table    => \$tables,
                          Where      => \$where);
-  die XML::Template::Exception->new ('DB', \$db->error ()) if defined \$db->error ();
+  die XML::Template::Exception->new ('DB', \$db->error ())
+    if defined \$db->error ();
 
 =head1 CONSTRUCTOR
 
 The constructor takes two parameters.  The first is the error type which a
 short identifier.  The type may contain dotted components (e.g. 'foo',
-'foo.bar', 'foo.bar.baz'), so that exception types are hierarchical.  
+'foo.bar', 'foo.bar.baz'), to indicate a hierarchy of exception types.
 That is, 'foo.bar' would be a specific type of the more general 'foo'
 type.  If no type is given, the type is set to 'Undefined'.  The second
-parameter is the text that describes the exception.
+parameter is some text that describes the exception.
 
 The constructor returns a blessed array containg the exception type and 
 info.
@@ -122,25 +123,22 @@ sub info {
   return $self->[1];
 }
 
-
-1;
-
-
-__END__
-
 =pod
 
 =head1 AUTHOR
 
 Jonathan Waxman
-jowaxman@bbl.med.upenn.edu
+<jowaxman@bbl.med.upenn.edu>
 
 =head1 COPYRIGHT
 
-Copyright (c) 2002 Jonathan A. Waxman
+Copyright (c) 2002-2003 Jonathan A. Waxman
 All rights reserved.
 
 This program is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.
 
 =cut
+
+
+1;

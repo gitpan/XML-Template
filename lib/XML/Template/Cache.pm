@@ -1,12 +1,12 @@
+###############################################################################
 # XML::Template::Cache
 #
-# Copyright (c) 2002 Jonathan A. Waxman <jowaxman@bbl.med.upenn.edu>
+# Copyright (c) 2002-2003 Jonathan A. Waxman <jowaxman@bbl.med.upenn.edu>
 # All rights reserved.
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.
-
-
+###############################################################################
 package XML::Template::Cache;
 use base qw(XML::Template::Base);
 
@@ -35,18 +35,16 @@ XML::Template::Cache - Document caching module for XML::Template.
 This modules provides the basic document caching mechanism used by
 XML::Template.  Parsed (i.e., code has been generated) documents are
 stored in a private array.  When the array is full, putting a document in
-the cache causes the oldest (access time) entry to be replaced.  The
-configuration variable C<$CACHE_SLOTS> in C<XML::Template::Config> sets
-the default size of the cache array.
+the cache causes the oldest (access time) entry to be replaced.
 
-In the initialization of C<XML::Template::Process>, a cache object is
-placed at the beginning of the load and put chain of responsiblity lists.  
+In the initialization of L<XML::Template::Process>, a cache object is
+placed at the beginning of the load and put chains of responsiblity.  
 Hence, every load and put operation on a document will result in the cache
 being queried first.
 
 =head1 CONSTRUCTOR
 
-A constructor method C<new> is provided by C<XML::Template::Base>.  A list
+A constructor method C<new> is provided by L<XML::Template::Base>.  A list
 of named configuration parameters may be passed to the constructor.  The
 constructor returns a reference to a new cache object or undef if an error
 occurred.  If undef is returned, you can use the method C<error> to
@@ -62,8 +60,9 @@ The following named configuration parameters are supported by this module:
 
 =item CacheSlots
 
-The size of the cache array.  This value will override the default
-value C<$CACHE_SLOTS> in C<XML::Template::Config>.
+The size of the cache array.  This value will override the default value
+C<$CACHE_SLOTS> in L<XML::Template::Config>.  The default cache array size
+if 5.
 
 =back
 
@@ -72,7 +71,7 @@ value C<$CACHE_SLOTS> in C<XML::Template::Config>.
 =head2 _init
 
 This method is the internal initialization function called from
-C<XML::Template::Base> when a new cache object is created.
+L<XML::Template::Base> when a new cache object is created.
 
 =cut
 
@@ -100,7 +99,7 @@ sub _init {
   my $document = $cache->load ($docname);
 
 The C<load> method, returns a document stored in the cache named by
-C<$docname>.  If no document is found, C<undef> is returned.
+C<$docname>.  If no document is found, undef is returned.
 
 =cut
 
@@ -181,25 +180,22 @@ sub put {
   return 1;
 }
 
-
-1;
-
-
-__END__
-
 =pod
 
 =head1 AUTHOR
 
 Jonathan Waxman
-jowaxman@bbl.med.upenn.edu
+<jowaxman@bbl.med.upenn.edu>
 
 =head1 COPYRIGHT
 
-Copyright (c) 2002 Jonathan A. Waxman
+Copyright (c) 2002-2003 Jonathan A. Waxman
 All rights reserved.
 
 This program is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.
 
 =cut
+
+
+1;

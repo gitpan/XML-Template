@@ -1,12 +1,12 @@
+###############################################################################
 # XML::Template::Document
 #
-# Copyright (c) 2002 Jonathan A. Waxman <jowaxman@bbl.med.upenn.edu>
+# Copyright (c) 2002-2003 Jonathan A. Waxman <jowaxman@bbl.med.upenn.edu>
 # All rights reserved.
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.
-
-
+###############################################################################
 package XML::Template::Document;
 use base (XML::Template::Base);
 
@@ -30,13 +30,14 @@ document.
 =head1 DESCRIPTION
 
 This module defines an object class that represents a parsed or unparsed
-XML document.  Typically, in XML::Template::Process, one in a series of
+XML document.  Typically, in L<XML::Template::Process>, one in a series of
 load objects will return a XML::Template::Document object.  If the
 document is not parsed (i.e., no code has been generated), the document is
-passed to XML::Template::Parser to be parsed.  The parsed
+passed to L<XML::Template::Parser> to be parsed.  The parsed
 XML::Template::Document object is then passed to each in a series of put
 objects to store the document.  If document caching is turned on, the
-first object in the load and put lists is a XML::Template::Cache object.
+first object in the load and put lists is a L<XML::Template::Cache>
+object.
 
 =head1 CONSTRUCTOR
 
@@ -47,8 +48,7 @@ to retrieve the error.  For instance:
   my $document = XML::Templatte::Document->new (%config)
     || die XML::Template::Document->error;
 
-A list of named configuration parameters may be passed to the 
-constructor.  
+A list of named configuration parameters may be passed to the constructor.
 The following named configuration parameters are supported by this module:
 
 =over 4
@@ -187,25 +187,22 @@ sub source {
   return $self->{_source};
 }
 
-
-1;
-
-
-__END__
-
 =pod
 
 =head1 AUTHOR
 
 Jonathan Waxman
-jowaxman@bbl.med.upenn.edu
+<jowaxman@bbl.med.upenn.edu>
 
 =head1 COPYRIGHT
 
-Copyright (c) 2002 Jonathan A. Waxman
+Copyright (c) 2002-2003 Jonathan A. Waxman
 All rights reserved.
 
 This program is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.
 
 =cut
+
+
+1;

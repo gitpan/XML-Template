@@ -1,18 +1,55 @@
+###############################################################################
 # XML::Template::Element::Core
 #
-# Copyright (c) 2002 Jonathan A. Waxman <jowaxman@law.upenn.edu>
+# Copyright (c) 2002-2003 Jonathan A. Waxman <jowaxman@law.upenn.edu>
 # All rights reserved.
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.
-
-
+###############################################################################
 package XML::Template::Element::Core;
 use base qw(XML::Template::Element);
 
 use strict;
 use XML::Template::Element;
 
+
+=pod
+
+=head1 NAME
+
+XML::Template::Element::Core - XML::Template plugin module for the core
+namespace tagset.
+
+=head1 SYNOPSIS
+
+This XML::Template plugin module implements the core namespace tagset.
+The core namespace includes tags that rely on XML::Template internals.
+
+=head1 CONSTRUCTOR
+
+XML::Template::Element::Block inherits its constructor method, C<new>,
+from L<XML::Template::Element>.
+
+=head1 CORE TAGSET METHODS
+
+=head2 element
+
+This method implements the element tag which provides a way to handle
+dynamic tag names.  The method C<process> in L<XML::Template::Process>
+replaces all occurances in an XHTML document of
+
+  <${tagname}
+
+with
+
+  <core:element core:name="${tagname}"
+
+When the core:element tag is encountered, this method is called.  A new 
+object is created from the module associated with the named tag and the 
+element method is called.
+
+=cut
 
 sub element {
   my $self = shift;
@@ -25,10 +62,6 @@ sub element {
 
   my $ns_named_params = $self->generate_named_params ($self->{_namespaces}, 1);
   my $attribs_named_params = $self->generate_named_params ($attribs);
-
-  # Construct a hash containing the namespace information present at the
-  # point this subroutine was called during parsing.
-  my $xmlinfo_code = $self->generate_xmlinfo_code ($self->{_xmlinfo});
 
   my $outcode = qq{
 do {
@@ -79,6 +112,23 @@ $code
 
   return $outcode;
 }
+
+=pod
+
+=head1 AUTHOR
+
+Jonathan Waxman
+<jowaxman@bbl.med.upenn.edu>
+
+=head1 COPYRIGHT
+
+Copyright (c) 2002-2003 Jonathan A. Waxman
+All rights reserved.
+
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+=cut
 
 
 1;

@@ -1,22 +1,19 @@
+###############################################################################
 # XML::Template::Base
 #
-# Copyright (c) 2002 Jonathan A. Waxman <jowaxman@bbl.med.upenn.edu>
+# Copyright (c) 2002-2003 Jonathan A. Waxman <jowaxman@bbl.med.upenn.edu>
 # All rights reserved.
 #
-# This program is free software; you can redistribute it and/or
-# modify it under the same terms as Perl itself.
-
-
+# This program is free software; you can redistribute it and/or modify it 
+# under the same terms as Perl itself.
+###############################################################################
 package XML::Template::Base;
 
 use strict;
 use XML::Template::Config;
-use XML::Simple;
-use Data::Dumper;
 
 
 my $SOURCE = {};
-my $CONFIG;
 
 =pod
 
@@ -38,10 +35,9 @@ and error handling.
 =head1 CONSTRUCTOR
 
 XML::Template::Base provides a common constructor for XML::Template
-modules.  The constructor simply creates a new self and calls an
-initialization method.  If the derived class does not have its own
-initialization subroutine, XML::Template::Base provides one that simply
-returns true.
+modules.  The constructor creates a new self and calls an initialization
+method.  If the derived class does not have its own initialization
+subroutine, XML::Template::Base provides one that simply returns true.
 
 The following named configuration parameters are supported:
 
@@ -49,7 +45,7 @@ The following named configuration parameters are supported:
 
 =item Debug
 
-Set to true to turn on printing debug information.
+Set to true to turn on printing debug information.  Not really supported.
 
 =item HTTPHost
 
@@ -59,9 +55,8 @@ running on the command line), the default is C<localhost>.
 
 =item Config
 
-A reference to a hash containing configuration information.  This is 
-typically a representation of the XML configuration file 
-C<xml-template.conf>.
+A reference to an XML::GDOME object that contains XML::Template
+configuration information.  See L<XML::Template::Config>.
 
 =back 4
 
@@ -84,24 +79,20 @@ sub new {
   # Contact is the basis for feelings.
   $self->{_debug} = $params{Debug} if defined $params{Debug};
   $self->{_hostname} = $params{HTTPHost}
-                       || $ENV{HTTP_HOST}
-                       || XML::Template::Config->hostname
+    || $ENV{HTTP_HOST}
+    || XML::Template::Config->hostname
     || return $proto->error (XML::Template::Config->error);
-
-  if (! defined $CONFIG) {
-    $CONFIG = $params{Config}
-                     || XML::Template::Config->config ()
-      || return $self->error (XML::Template::Config->error);
-  }
-  $self->{_conf} = $CONFIG;
+  $self->{_config} = $params{Config}
+    || XML::Template::Config->config
+    || return $proto->error (XML::Template::Config->error);
   $self->{_source} = $SOURCE;
-  $self->{_errid} = $self->errid;
 
   # We become attached to what feels good; attachment and craving lead 
   # to becoming and birth.
-  return $self->_init (%params) ? $self : $proto->error ($self->error);
+  return $self->_init (%params) ? $self
 
   # Eventually we grow old and die.
+                                : $proto->error ($self->error);
 }
 
 =pod
@@ -110,9 +101,9 @@ sub new {
 
 =head2 _init
 
-C<XML::Template::Base> provides an initialization function that simply 
-returns 1. This is required for modules that use C<XML::Template::Base> as 
-a base class, but do not require an initialization function.
+XML::Template::Base provides an initialization function that simply
+returns 1. This is required for modules that use XML::Template::Base as a
+base class, but do not require an initialization function.
 
 =cut
 
@@ -124,129 +115,175 @@ sub _init {
 
 =pod
 
-=head2 _copy
-
-  my $namespace_info = $self->_copy ($orig_namespace_info);
-
-This method makes a copy of whatever is passed to it (scalar, array, or
-hash), interpolating any config variables with values from the appropriate
-host entry of the config file.  For instance, if the host is C<syrme.net>, 
-and the host entry for C<syrme.net> in the config file is:
-
-  <host name="syrme.net">
-    <sourcename>syrme</sourcename>
-  </host>
-
-and if the variable C<$orig_namespace_info> is a reference to a hash
-representing the following section of the config file,
-
-  <namespace name="http://syrme.net/xml-template/block/v1">
-    <sourcename>${sourcename}</sourcename>
-  </namespace>
-
-that is,
-
-$orig_namespace_info = {
-  'name'	=> 'http://syrme.net/xml-template/user/v1',
-  'sourcename'	=> '${sourcename}'
-};
-
-C<_copy> will replace C<${sourcename}> with the value from the 
-variable named sourcename from the host entry, that is, syrme.  So, 
-c<_copy> will return a reference to the hash:
-
-$namespace_info = {
-  'name'	=> 'http://syrme.net/xml-template/user/v1',
-  'sourcename'	=> 'syrme'
-};
-
-=cut
-
-sub _copy {
-  my $self = shift;
-  my $data = shift;
-
-  if (! ref $data) {
-    $data =~ s/\${([^}]+)}/$self->{_conf}->{$1}/g;
-    return $data;
-  } elsif (ref $data eq 'ARRAY') {
-    return [map $self->_copy ($_), @$data];
-  } elsif (ref $data eq 'HASH') {
-    return +{map { $_ => $self->_copy ($data->{$_}) } keys %$data};
-  }
-}
-
-sub get_ancestors {
-  my $self = shift;
-  my @packages = @_;
-
-  my @ancestors;
-
-  if (! @packages) {
-    my $package = ref ($self);
-    push (@ancestors, $package);
-    @packages = eval "\@${package}::ISA";
-  }
-
-  push (@ancestors, @packages);
-  foreach my $package (@packages) {
-    my @tpackages = eval "\@${package}::ISA";
-    my @tancestors = $self->get_ancestors (@tpackages)
-      if scalar (@tpackages);
-    push (@ancestors, @tancestors);
-  }
-
-  return wantarray ? return @ancestors : join (',', @ancestors);
-}
-
-sub errid {
-  my $self = shift;
-
-  my $errid;
-
-  my @ancestors = $self->get_ancestors ();
-  foreach my $ancestor (@ancestors) {
-    $ancestor =~ /([^:]+)$/;
-    $errid .= '/' if defined $errid;
-    $errid .= $1;
-  }
-
-  return $errid;
-}
-
-=pod
-
 =head1 PUBLIC METHODS
 
 =head2 error
 
-  return $self->error ($errstr);
+  return $self->error ($type, $error);
+  my ($type, $error) = $self->error;
   print $self->error;
 
 XML::Template::Base provides the method C<error> to do simple error
-handling.  If an argument is given (the error), it is stored, otherwise,
-the stored error is returned.
+handling.  If no parameters are given, the currently stored error type and 
+message are returned.  If parameters for the error type and message are 
+given, they are stored as the current error.
 
 C<error> may be called as a package method (e.g.,
 C<XML::Template::Module-E<gt>error ($error);> or as an object method
-(e.g., C<$xmlt-E<gt>error ($error);>.  If it is called as a package
-method, the error is stored as a package variable.  If it is called as an
-object method, the error is stored as a private variable.
+(e.g., C<$xml_template-E<gt>error ($error);>.  If it is called as a
+package method, the error is stored as a package variable.  If it is
+called as an object method, the error is stored as a private variable.
 
 =cut
 
 sub error {
-  my $self  = shift;
-  my $error = shift;
+  my $self = shift;
+  my ($type, $error) = @_;
 
   # If an error given, set it in the object or package.
   # Otherwise, return the error from the object or package.
-  if (defined $error) {
-    ref ($self) ? $self->{_error} = $error : $self::_error = $error;
+  if (defined $type) {
+    ref ($self) ? $self->{_error} = [$type, $error]
+                : $self::_error = [$type, $error];
     return undef;
   } else {
-    return ref ($self) ? $self->{_error} : $self::_error;
+    if (wantarray) {
+      return ref ($self) ? @{$self->{_error}} : @{$self::_error};
+    } else {
+      if (ref ($self)) {
+        return defined $self->{_error}->[0]
+                 ? "$self->{_error}->[0]: $self->{_error}->[1]"
+                 : undef;
+      } else {
+        return defined $self::_error->[0]
+                 ? "$self::_error->[0]: $self::_error->[1]"
+                 : undef;
+      }
+    }
   }
+}
+
+=pod
+
+=head2 get_info
+
+  my $host_info = $self->get_info ("/xml-template/hosts/host[\@name='$name']",
+                                   'basedir', 'domain');  
+
+This method returns a hash containing name/value pairs from the
+XML::Template configuration file.  The first parameter is an XPath query
+that returns the XML subtree containing the desired configuration
+information.  The remaining parameters name the child elements of the
+configuration subtree whose values you wish returned in the hash.  This
+method is wrapped by more specific subroutines, for instance,
+get_host_info, get_subroutine_info, get_namespace_info, etc.  See
+L<XML::Template::Config> for more details on the XML::Template
+configuration file.
+
+=cut
+  
+sub get_info {
+  my $self = shift;
+  my ($query, @elements) = @_;
+
+  my ($node) = $self->{_config}->findnodes ($query);
+  if (defined $node) {
+    my (%info, @info);
+    foreach my $el (@elements) {
+      my @nodes = $self->{_config}->findnodes ("$query/$el");
+      if (scalar (@nodes) == 1) {
+        if (wantarray) {
+          push (@info, $nodes[0]->string_value);
+        } else {
+          $info{$el} = $nodes[0]->string_value;
+        }
+      } elsif (scalar (@nodes) > 1) {
+        my @values;
+        foreach my $node (@nodes) {
+          push (@values, $node->string_value);
+        }
+        if (wantarray) {
+          push (@info, \@values);
+        } else {
+          push (@{$info{$el}}, \@values);
+        }
+      }
+    }
+
+    return wantarray ? @info : \%info;
+  }
+
+  return undef;
+}
+
+=pod
+
+=head2 get_host_info
+
+  my $host_info = $self->get_host_info ($hostname);
+  my $host_info = $self->get_host_info ($hostname, 'domain');
+
+This method returns a hash of name/value pairs of hostname information
+from the XML::Template configuration file.  The first parameter is the
+name of the host for which information is desired.  The remaining
+parameters name the configuration elements to include in the hash.  If no
+such parameters are given, all host configuration elements are included.  
+Currently, this includes C<basedir> and C<domain>.
+
+=cut
+
+sub get_host_info {
+  my $self = shift;
+  my ($name, @elements) = @_;
+
+  @elements = qw(basedir domain) if ! scalar (@elements);
+  return $self->get_info (
+           "/xml-template/hosts/host[\@name='$name']",
+           @elements);  
+}
+
+=pod
+
+=head2 get_source_mapping_info
+
+  my $get_source_mapping_info = $self->get_source_mapping_info (
+                                  namespace	=> $namespace);
+  my $get_source_mapping_info = $self->get_source_mapping_info (
+                                  namespace	=> $namespace,
+                                  'source');
+
+This method returns a hash of name/value pairs of source mapping
+two parameters give the resource type and name of the source mapping for
+which information is desired.  The remaining parameters name the
+configuration elements to include in the hash.  If no such parameters are
+given, all source mapping configuration elements are included.  
+Currently, this includes C<source>, C<table>, C<keys>, and C<relation>.  
+The element C<relation> is a hash of related namespace name/table pairs.
+
+=cut
+
+sub get_source_mapping_info {
+  my $self = shift;
+  my ($type, $name, @elements) = @_;
+
+  my @telements = qw(source table keys) if ! scalar (@elements);
+  my $source_info = $self->get_info (
+                      "/xml-template/source-mappings/source-mapping[\@$type='$name']",
+                      @telements);
+
+  my %elements = map { $_ => 1 } @elements;
+  if (! scalar (@elements) || $elements{relation}) {
+    my @nodes = $self->{_config}->findnodes (
+                  "/xml-template/source-mappings/source-mapping[\@$type='$name']/relation/\@namespace");
+    foreach my $node (@nodes) {
+      my $namespace = $node->string_value;
+      $source_info->{relation}->{$namespace} = $self->get_info (
+        "/xml-template/source-mappings/source-mapping[\@$type='$name']/relation[\@namespace='$namespace']",
+        'table');
+    }
+  }
+
+  return $source_info;
 }
 
 =pod
@@ -254,90 +291,25 @@ sub error {
 =head2 get_source_info
 
   my $source_info = $self->get_source_info ($sourcename);
+  my $source_info = $self->get_source_info ($sourcename, 'module');
 
-This method returns a hash containing name/value pairs for the config 
-variables from the source entry, C<$sourcename> in the config file.
+This method returns a hash of name/value pairs of source information from
+the XML::Template configuration file.  The first parameter is the name of
+the source for which information is desired.  The remaining parameters
+name the configuration elements to include in the hash.  If no such
+parameters are given, all host configuration elements are included.
+Currently, this includes C<module>, C<dsn>, C<user>, and C<pwdfile>.
 
 =cut
 
 sub get_source_info {
-  my $self       = shift;
-  my $sourcename = shift;
-
-  my $orig_source_info = $self->{_conf}->{sources}->{$sourcename};
-  my $source_info = $self->_copy ($orig_source_info);
-
-  return $source_info;
-}
-
-=pod
-
-=head2 get_subroutine_info
-
-  my $subroutine_info = $self->get_subroutine_info ($subroutine);
-
-This method returns a hash containing name/value pairs for the config 
-variables from the subroutine entry, C<$subroutine>, in the config file.
-
-=cut
-
-sub get_subroutine_info {
-  my $self       = shift;
-  my $subroutine = shift;
-
-  my $orig_subroutine_info = $self->{_conf}->{subroutines}->{$subroutine};
-  my $subroutine_info = $self->_copy ($orig_subroutine_info);
-
-  return $subroutine_info;
-}
-
-=pod
-
-=head2 get_namespace_info
-
-  my $namespace_info = $self->get_namespace_info ($namespace);
-
-This method returns a hash containing name/value pairs for the config 
-variables from the namespace entry, C<$namespace>, in the config file.
-
-=cut
-
-sub get_namespace_info {
-  my $self      = shift;
-  my $namespace = shift;
-
-  my $namespace_info;
-  if (defined $namespace) {
-    my $orig_namespace_info = $self->{_conf}->{namespaces}->{$namespace};
-    $namespace_info = $self->_copy ($orig_namespace_info);
-  }
-
-  return $namespace_info;
-}
-
-=pod
-
-=head2 get_element_info
-
-  my $element_info = $self->get_element_info ($namespace, $type);
-
-This method returns a hash containing name/value pairs for the config 
-variables from the element entry, C<$type>, in the namespace entry, 
-C<$namespace>, in the config file.
-
-=cut
-
-sub get_element_info {
   my $self = shift;
-  my ($namespace, $type) = @_;
+  my ($name, @elements) = @_;
 
-  my $element_info;
-  if (defined $namespace && defined $type) {
-    my $orig_element_info = $self->{_conf}->{namespaces}->{$namespace}->{element}->{$type};
-    $element_info = $self->_copy ($orig_element_info);
-  }
-
-  return $element_info;
+  @elements = qw(module dsn user pwdfile) if ! scalar (@elements);
+  return $self->get_info (
+           "/xml-template/sources/source[\@name='$name']",
+           @elements);
 }
 
 =pod
@@ -346,15 +318,16 @@ sub get_element_info {
 
   my $source = $self->get_source ($sourcename);
 
-This method returns the data source, C<$sourcename>, from the config file.
+This method returns the data source named by the parameter from the 
+XML::Template configuration file.
 
-Data source references are stored in a private hash.  If a requested data
-source has already been loaded, the stored reference to it is returned.
+Data source references are stored in a cache.  If a requested data source
+has already been loaded, the cached reference to it is returned.
 
 =cut
 
 sub get_source {
-  my $self       = shift;
+  my $self = shift;
   my $sourcename = shift;
 
   my $source;
@@ -365,31 +338,22 @@ sub get_source {
 
     # Create and return a reference to a source object.
     } else {
-      my $source_info = $self->get_source_info ($sourcename);
-      if (defined $source_info) {
+      my $sourceinfo = $self->get_source_info ($sourcename, 'module');
+      if (defined $sourceinfo) {
         # Load the source module.
-        my $source_module = $source_info->{module};
-        XML::Template::Config->load ($source_module)
+        my $module = $sourceinfo->{module};
+        XML::Template::Config->load ($module)
           || return $self->error (XML::Template::Config->error);
 
-        # Get password.
-        my $pwdfile = $source_info->{pwdfile};
-        open (PWDFILE, $pwdfile)
-          || return $self->error ("Could not open password file '$pwdfile' for data source '$sourcename': $!");
-        my $pwd = <PWDFILE>;
-        chomp $pwd;
-        close PWDFILE;
-
         # Create a new data source object.
-        $source_info->{password} = $pwd;
-        $source = $source_module->new ($source_info)
-          || return $self->error ($source_module->error ());
+        $source = $module->new ($sourcename)
+          || return $self->error ('Source', scalar ($module->error ()));
 
         # Cache the data source object.
         $self->{_source}->{$sourcename} = $source;
 
       } else {
-        return $self->error ("Source '$sourcename' not defined.");
+        return $self->error ('Source', "Source '$sourcename' not defined.");
       }
     }
   }
@@ -397,25 +361,157 @@ sub get_source {
   return $source;
 }
 
+=pod
 
-1;
+=head2 get_subroutine_info
 
+  my $subroutine_info = $self->get_subroutine_info ($subname);
+  my $subroutine_info = $self->get_subroutine_info ($subname, 'module');
 
-__END__
+This method returns a hash of name/value pairs of subroutine information
+from the XML::Template configuration file.  The first parameter is the
+name of the subroutine for which information is desired.  The remaining
+parameters name the configuration elements to include in the hash.  If no
+such parameters are given, all host configuration elements are included.
+Currently, this include C<description> and C<module>.
+
+=cut
+
+sub get_subroutine_info {
+  my $self = shift;
+  my ($name, @elements) = @_;
+
+  @elements = qw(description module) if ! scalar (@elements);
+  return $self->get_info (
+           "/xml-template/subroutines/subroutine[\@name='$name']",
+           @elements);
+}
+
+=pod
+
+=head2 get_namespace_info
+
+  my $namespace_info = $self->get_namespace_info ($namespace);
+  my $namespace_info = $self->get_namespace_info ($namespace, 'title');
+
+This method returns a hash of name/value pairs of namespace information
+from the XML::Template configuration file.  The first parameter is the
+name of the namespace for which information is desired.  The remaining
+parameters name the configuration elements to include in the hash.  If no
+such parameters are given, all host configuration elements are included.
+Currently, this include C<prefix>, C<title>, C<decsritpion>, and
+C<module>.
+
+=cut
+
+sub get_namespace_info {
+  my $self = shift;
+  my ($name, @elements) = @_;
+
+  @elements = qw(prefix title description module) if ! scalar (@elements);
+  return $self->get_info (
+           "/xml-template/namespaces/namespace[\@name='$name']",
+           @elements);
+}
+=pod
+
+=head2 get_element_info
+
+  my $element_info = $self->get_element_info ($namespace, $element);
+  my $element_info = $self->get_element_info ($namespace, $element,
+                                              'content');
+
+This method returns a hash of name/value pairs of element information from
+the XML::Template configuration file.  The first two parameters,
+respectively, are the name of the namespace in which the element resides
+and the name of the element for which information is desired.  The
+remaining parameters name the configuration elements to include in the
+hash.  If no such parameters are given, all host configuration elements
+are included. Currently, this include C<content> and C<nestedin>.
+
+=cut
+
+sub get_element_info {
+  my $self = shift;
+  my ($namespace, $name, @elements) = @_;
+
+  @elements = qw(content nestedin) if ! scalar (@elements);
+  return $self->get_info (
+           "/xml-template/namespaces/namespace[\@name='$namespace']/element[\@name='$name']",
+           @elements);
+}
+
+=pod
+
+=head2 get_attribs
+
+  my $attribs = $self->get_attribs ($namespace, $element, $attrib);
+
+This method returns an array of attribute names for an element.  The first 
+parameter specifies the namespace in which the element resides.  The 
+second parameter is the name of the element.
+
+=cut
+
+sub get_attribs {
+  my $self = shift;
+  my ($namespace, $element) = @_;
+
+  my @attribs;
+  my @nodes = $self->{_config}->findnodes ("/xml-template/namespaces/namespace[\@name='$namespace']/element[\@name='$element']/attrib/\@name");
+  foreach my $node (@nodes) {
+    push (@attribs, $node->string_value);
+  }
+  return @attribs;
+
+  return undef;
+}
+
+=pod
+
+=head2 get_attrib_info
+
+  my $attrib_info = $self->get_attrib_info ($namespace, $element, $attrib);
+  my $attrib_info = $self->get_attrib_info ($namespace, $element, $attrib,
+                                            'parse');
+
+This method returns a hash of name/value pairs of attribute information
+from the XML::Template configuration file.  The first three parameters,
+respectively, are the namespace in which the associated element resides,
+the attribute's associated element, and the name of the attribute for
+which information is desired.  The remaining parameters name the
+configuration elements to include in the hash.  If no such parameters are
+given, all host configuration elements are included. Currently, this
+include C<requires>, C<parse>, C<parser>, and C<type>.
+
+=cut
+
+sub get_attrib_info {
+  my $self = shift;
+  my ($namespace, $element, $name, @elements) = @_;
+
+  @elements = qw(required parse parser type) if ! scalar (@elements);
+  return $self->get_info (
+           "/xml-template/namespaces/namespace[\@name='$namespace']/element[\@name='$element']/attrib[\@name='$name']",
+           @elements);
+}
 
 =pod
 
 =head1 AUTHOR
 
 Jonathan Waxman
-jowaxman@bbl.med.upenn.edu
+<jowaxman@bbl.med.upenn.edu>
 
 =head1 COPYRIGHT
 
-Copyright (c) 2002 Jonathan A. Waxman
+Copyright (c) 2002-2003 Jonathan A. Waxman
 All rights reserved.
 
 This program is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.
 
 =cut
+
+
+1;

@@ -1,12 +1,12 @@
+###############################################################################
 # XML::Template::Cache::File
 #
-# Copyright (c) 2002 Jonathan A. Waxman <jowaxman@bbl.med.upenn.edu>
+# Copyright (c) 2002-2003 Jonathan A. Waxman <jowaxman@bbl.med.upenn.edu>
 # All rights reserved.
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.
-
-
+###############################################################################
 package XML::Template::Cache::File;
 use base qw(XML::Template::Base);
 
@@ -33,22 +33,19 @@ XML::Template::Cache::File - Document caching to files module.
 
 =head1 DESCRIPTION
 
-This modules provides XML template caching to files. A given number of
-parsed (i.e., code has been generated) XML templates are stored in files
-in a speficied directory.  When the directory is full, putting a document
-in the file cache causes the oldest (access time) entry to be deleted.  
-The configuration variable C<$CACHE_DIR_SLOTS> in C<XML::Template::Config>
-sets the default size of the file cache directory.
+This modules provides XML template caching to files.  The files store the 
+code generated from the template.  When the template is requested, the 
+code from the file can be quickly loaded and evaluated.
 
 If file caching is turned on, in the initialization of
-C<XML::Template::Process>, a file cache object is placed in the load and
+L<XML::Template::Process>, a file cache object is placed in the load and
 put chain of responsiblity lists after the normal cache object.  Hence,
 every load and put operation on a document will result in the file cache
 being queried right after the normal cache.
 
 =head1 CONSTRUCTOR
 
-A constructor method C<new> is provided by C<XML::Template::Base>.  A list
+A constructor method C<new> is provided by L<XML::Template::Base>.  A list
 of named configuration parameters may be passed to the constructor.  The
 constructor returns a reference to a new cache object or undef if an error
 occurred.  If undef is returned, you can use the method C<error> to
@@ -64,13 +61,8 @@ The following named configuration parameters are supported by this module:
 =item CacheDir
 
 The directory to store parsed XML templated in.  This value will override 
-the default value C<$CACHE_DIR> in C<XML::Template::Config>.
-
-=item CacheDirSlots
-
-The number of files to keep in the cache directoryt.  This value will
-override the default value C<$CACHE_DIR_SLOTS> in
-C<XML::Template::Config>.
+the default value C<$CACHE_DIR> in L<XML::Template::Config>.  The default 
+file cache directory is C</tmp/-xml-template>.
 
 =back
 
@@ -79,7 +71,7 @@ C<XML::Template::Config>.
 =head2 _init
 
 This method is the internal initialization function called from
-C<XML::Template::Base> when a new cache object is created.
+L<XML::Template::Base> when a new cache object is created.
 
 =cut
 
@@ -90,8 +82,6 @@ sub _init {
   print "XML::Template::Cache::_init\n" if $self->{_debug};
 
   $self->{_cache_dir} = $params{CacheDir} || XML::Template::Config->cache_dir
-    || return $self->error (XML::Template::Config->error);
-  $self->{_cache_dir_slots} = $params{CacheDirSlots} || XML::Template::Config->cache_dir_slots
     || return $self->error (XML::Template::Config->error);
 
   $self->{_enabled} = 1;
@@ -107,8 +97,8 @@ sub _init {
 
   my $document = $cache->load ($docname);
 
-The C<load> method, returns a document stored in the cache named by 
-C<$docname>.  If no document is found, C<undef> is returned.
+The C<load> method, returns a document stored in the cache named by the
+parameter.  If no document is found, undef is returned.
 
 =cut
 
@@ -166,8 +156,9 @@ sub load {
   $cache->put ($docname, $document);
 
 The C<put> method stores a document in the cache.  If the cache is full,
-the oldest accessed document is replaced.  The first parameter is the
-name of the document.  The second parameter is the document to store.
+the oldest accessed document is replaced.  The first parameter is the name
+of the document.  The second parameter is a blessed reference to the
+L<XML::Template::Document> object to store.
 
 =cut
 
@@ -191,7 +182,7 @@ sub put {
     File::Path::mkpath ($filepath);
 
     open (FILE, "> $file")
-      || return $self->error ("ERROR [Cache - File]: Could not open $file: $!");
+      || return $self->error ('Cache/File', "Could not open $file: $!");
     print FILE $document->source . "\n";
     print FILE $document->code;
     close (FILE);
@@ -200,25 +191,22 @@ sub put {
   return 1;
 }
 
-
-1;
-
-
-__END__
-
 =pod
 
 =head1 AUTHOR
 
 Jonathan Waxman
-jowaxman@bbl.med.upenn.edu
+<jowaxman@bbl.med.upenn.edu>
 
 =head1 COPYRIGHT
 
-Copyright (c) 2002 Jonathan A. Waxman
+Copyright (c) 2002-2003 Jonathan A. Waxman
 All rights reserved.
 
 This program is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.
 
 =cut
+
+
+1;

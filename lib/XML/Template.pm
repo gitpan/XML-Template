@@ -1,29 +1,28 @@
+###############################################################################
 # XML::Template
 #
-# Copyright (c) 2002 Jonathan A. Waxman <jowaxman@bbl.med.upenn.edu>
+# Copyright (c) 2002-2003 Jonathan A. Waxman <jowaxman@bbl.med.upenn.edu>
 # All rights reserved.
 #
-# This program is free software; you can redistribute it and/or
-# modify it under the same terms as Perl itself.
+# This program is free software; you can redistribute it and/or modify it 
+# under the same terms as Perl itself.
 #
-# ------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 #
 # Much of the initial design philosophy (and design) was taken from the
 # masterfully written Template Toolkit by Andy Wardley which I use 
 # extensively myself.
-
-
+###############################################################################
 package XML::Template;
 use base qw(XML::Template::Base);
 
 use strict;
 use vars qw($VERSION);
 use CGI;
-use XML::Template::Config;
+use File::Spec;
 
 
-$VERSION	= '3.00';
-
+$VERSION	= '3.20';
 
 =pod
 
@@ -60,14 +59,31 @@ module:
 
 =over 4
 
+=item ErrorTemplate
+
+If a scalar, the name of the XML::Template document to display when an
+exception is raised.  The template variables C<Exception.type> and
+C<Exception.info> will be set for the exception type and description,
+respectively.
+
+C<ErrorTemplate> may also be a reference to an array in which the first
+element is the name of the default error template and the second element
+is a hash of exception type/template name pairs.  If the type of the
+exception raised in listed in the hash, the associated template will be
+displayed.  Otherwise, the default template is displayed.
+
+If no error template is given (the default), XML::Template will die.
+
 =item Process
 
-Reference to a processor object.  The default process object is
-XML::Template::Process.
+A reference to a processor object.  This value will override the default
+value C<$PROCESS> in L<XML::Template::Config>.  The default process object
+is L<XML::Template::Process>.
 
 =back
 
-See L<XML::Template::Base> for general options.
+See L<XML::Template::Base> and L<XML::Template::Config> for additional
+options.
 
 =head1 PRIVATE METHODS
 
@@ -84,10 +100,71 @@ sub _init {
 
   print "XML::Template::_init\n" if $self->{_debug};
 
+  $self->{_error_template} = $params{ErrorTemplate};
+
   # Get processor object.
   $self->{_process} = $params{Process}
-                      || XML::Template::Config->process (%params)
-    || return $self->error (XML::Template::Config->error);
+    || XML::Template::Config->process (%params)
+    || return $self->_handle_error (XML::Template::Config->error);
+
+  return 1;
+}
+
+=pod
+
+=head2 _handle_error
+
+  $self->_handle_error ($type, $info);
+
+This method will display the appropriate error template for the exception
+type, the first parameter.  The second parameter is the description of the 
+exception or error message.
+
+=cut
+
+sub _handle_error {
+  my $self = shift;
+  my ($type, $info) = @_;
+
+  if (defined $type) {
+    if (defined $self->{_error_template}) {
+      my %vars = (
+           'Exception.type'	=> $type,
+           'Exception.info'	=> $info
+         );
+
+      my $error_template = $self->{_error_template};
+      delete $self->{_error_template};
+
+      if (ref ($error_template)) {
+        my $default   = $error_template->[0];
+        my $templates = $error_template->[1];
+        if (exists $templates->{$type}) {
+          $error_template = $templates->{$type};
+        } else {
+          $error_template = $default;
+        }
+      }
+
+      select STDOUT;  # In case error inside code has selected another fh.
+      if (defined $self->{_process}) {
+        $self->{_process}->{_cgi_header} = 1;
+        my $success;
+        $success = $self->{_process}->process ($error_template, \%vars);
+        if (! $success) {
+          print CGI->header ();
+          print scalar ($self->{_process}->error);
+          return undef;
+        }
+      } else {
+        print CGI->header ();
+        print "$type: $info";
+        return undef;
+      }
+    } else {
+      return $self->error ($type, $info);
+    }
+  }
 
   return 1;
 }
@@ -102,11 +179,10 @@ sub _init {
     || die $xml_template->error;
 
 This method is used to process an XML file.  The first parameter is the
-name of a piece of XML.  The source of the XML depends on the present
-process loaders.  (See C<get_load> and C<set_load> in
-L<XML::Template::Process>.)  The second parameter is a reference to a hash
-containing name/value pairs of variables to add to the global variable
-context.
+name of an XML document.  The actual source of the XML depends on the
+which loader loads the document first.  (See L<XML::Template::Process>.)  
+The second parameter is a reference to a hash containing name/value pairs
+of variables to add to the global variable context.
 
 =cut
 
@@ -123,37 +199,20 @@ sub process {
     $vars->{"Form.$param"} = scalar (@values) == 1 ? $values[0] : \@values;
   }
 
-  # Load configuration file.
-use Data::Dumper;
-#print Dumper ($self->{_conf}) . "\n";
-  $self->{_process}->process (XML::Template::Config->configfile)
-    || return $self->error ($self->{_process}->error);
-#print Dumper ($self->{_process}->{_conf}) . "\n";
-
-  my $basedir = $self->{_conf}->{basedir};
-  $self->{_process}->process ("$basedir/xml-template.conf")
-    || return $self->error ($self->{_process}->error);
-
-  # Call the processor.
-  $self->{_process}->process ($name, $vars)
-    || return $self->error ($self->{_process}->error);
+  if (! $self->{_process}->process ($name, $vars)) {
+    return $self->_handle_error ($self->{_process}->error ());
+  }
 
   return 1;
 }
-
-
-1;
-
-
-__END__
 
 =pod
 
 =head1 ACKNOWLEDGEMENTS
 
-Much of the initial design philosophy (and design) was taken from the 
-masterfully written Template Toolkit by Andy Wardley which I use 
-extensively myself.
+Much of the initial design philosophy (and design) was taken from or
+inspired by the masterfully written Template Toolkit by Andy Wardley which
+I use extensively myself.
 
 Thanks to Josh Marcus, August Wohlt, and Kristina Clair for many valuable 
 discussions.
@@ -161,14 +220,17 @@ discussions.
 =head1 AUTHOR
 
 Jonathan A. Waxman
-jowaxman@bbl.med.upenn.edu
+<jowaxman@bbl.med.upenn.edu>
 
 =head1 COPYRIGHT
 
-Copyright (c) 2002 Jonathan A. Waxman
+Copyright (c) 2002-2003 Jonathan A. Waxman
 All rights reserved.
 
 This program is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.
 
 =cut
+
+
+1;

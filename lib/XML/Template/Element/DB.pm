@@ -1,12 +1,12 @@
+###############################################################################
 # XML::Template::Element::DB
 #
-# Copyright (c) 2002 Jonathan A. Waxman <jowaxman@law.upenn.edu>
+# Copyright (c) 2002-2003 Jonathan A. Waxman <jowaxman@law.upenn.edu>
 # All rights reserved.
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.
-
-
+###############################################################################
 package XML::Template::Element::DB;
 use base qw(XML::Template::Element XML::Template::Element::Iterator);
 
@@ -16,6 +16,110 @@ use IO::String;
 
 use vars qw($AUTOLOAD);
 
+
+=pod
+
+=head1 NAME
+
+XML::Template::Element::DB - XML::Template module that implements the SQL
+tagset.
+
+=head1 SYNOPSIS
+
+This XML::Template module implements the SQL tagset.  XML::Template plugin
+modules that query SQL databases should be derived from this module.  The
+database and table to query are associated with the namespace of the tags
+and is specified in the XML::Template configuration file (see
+L<XML::Template::Config>).
+
+=head1 CONSTRUCTOR
+
+XML::Template::Element::Block inherits its constructor method, C<new>,
+from L<XML::Template::Element>.
+
+=head1 SQL TAGSET METHODS
+
+=head2 select
+
+This method implements a SELECT SQL query on the database and table
+associated with the tag's namespace.  If this tag is nested in a related
+namespace, the column will be selected via an intermediate mapping
+database table, defined in the XML::Template configuration file. For
+instance, suppose the following XML is parsed:
+
+  <xml xmlns:group="http://syrme.net/xml-template/group/v1"
+       xmlns:item="http://syrme.net/xml-template/item/v1">
+    <group:select name="group1">
+      <item:select fields="*" name="item1">
+        ...
+      </item:select>
+    </group:select>
+  </xml>
+
+The relationship table that maps items to groups should be defined in the 
+XML::Template configuration file.  If the relation table is group2item, 
+the following SQL would be generated for the item tag:
+
+  SELECT * FROM items,group2item
+           WHERE items.itemname=group2item.itemname
+                 AND group2item.groupname='group1'
+                 AND group2item.itemname='item1'
+
+The following attributes are used:
+
+=over 4
+
+=item name
+
+A comma-separated list of the names of the primary keys of the database
+column to select.  The primary keys and their order is specified in the
+XML::Template configuration file.  This attribute is not required.
+
+=item fields, field
+
+A comma separated list of the database table fields to return.  To return 
+all fields, use '*'.  For each field returned a variable will be set with 
+the field's name and value.  These variables will be available in the 
+content of the select element.
+
+=back
+
+Remaining attributes will be used to constrain the selection.  For 
+instance, the element
+
+  <block:select name="block1" fields="*"
+                title="Title" description="Desc"/>
+
+will result in the following SQL query
+
+  SELECT * FROM blocks
+           WHERE blockname='block1'
+                 AND title='Title'
+                 AND description='Desc'
+
+The value of a remaining attribute may be a comma-separated list, in which 
+case, each element in the list is combined into an OR clause.  So the 
+following element:
+
+  <block:select name="block1" fields="*" title="Title,Title2"/>
+
+would produce the following SQL query:
+
+  SELECT * FROM blocks
+           WHERE blockname='block1'
+           AND (title='Title' OR title='Title2')
+
+In addition, if the value of a remaining attribute contains a '%', the 
+LIKE comparison will be used rather than =.  For instance,
+
+  <block:select fields="blockname,body" title="%Title%"/>
+
+would produce the following SQL query:
+
+  SELECT blockname,body FROM blocks
+                        WHERE title LIKE '%Title%'
+
+=cut
 
 sub select {
   my $self = shift;
@@ -30,10 +134,10 @@ sub select {
 
   # Get database info.
   my $namespace = $self->namespace ();
-  my $namespace_info = $self->get_namespace_info ($namespace);
-  my $dbname = $namespace_info->{sourcename};
-  my $keys   = $namespace_info->{key};
-  my $table  = $namespace_info->{table};
+  my $source_mapping_info = $self->get_source_mapping_info (namespace => $namespace);
+  my $dbname = $source_mapping_info->{source};
+  my $table  = $source_mapping_info->{table};
+  my $keys   = $source_mapping_info->{keys};
 
   my $outcode = qq!
 do {
@@ -67,22 +171,24 @@ no strict;
 use strict;
 
   if (defined \$parent_namespace) {
-    my \$parent_namespace_info = \$process->get_namespace_info (\$parent_namespace);
-    if (defined \$parent_namespace_info->{relatedto} &&
-        defined \$parent_namespace_info->{relatedto}->{'$namespace'}) {
-      \$tables .= ",\$parent_namespace_info->{relatedto}->{'$namespace'}->{table}";
+    my \$parent_namespace_info = \$process->get_source_mapping_info (namespace => \$parent_namespace);
+    if (defined \$parent_namespace_info->{relation} &&
+        defined \$parent_namespace_info->{relation}->{'$namespace'}) {
+      my \$rtable = \$parent_namespace_info->{relation}->{'$namespace'}->{table};
+
+      \$tables .= ",\$rtable";
 
       my \$i = 0;
       foreach my \$key (split (',', '$keys')) {
         \$where .= ' and ' if defined \$where;
-        \$where .= "$table.\$key=\$parent_namespace_info->{relatedto}->{'$namespace'}->{table}.\$key";
+        \$where .= "$table.\$key=\$rtable.\$key";
         \$i++;
       }
 
       \$i = 0;
-      foreach my \$key (split (',', \$parent_namespace_info->{key})) {
+      foreach my \$key (split (',', \$parent_namespace_info->{keys})) {
         \$where .= ' and ' if defined \$where;
-        \$where .= "\$parent_namespace_info->{relatedto}->{'$namespace'}->{table}.\$key='\$parent_names[\$i]'";
+        \$where .= "\$rtable.\$key='\$parent_names[\$i]'";
         \$i++;
       }
     }
@@ -116,7 +222,7 @@ use strict;
     \@__parent_names = split (/\\s*,\\s*/, $name);
   } else {
     if (defined \$result) {
-      foreach my \$key (split (/\s*,\s*/, '$keys')) {
+      foreach my \$key (split (/\\s*,\\s*/, '$keys')) {
         push (\@__parent_names, \$result->{\$key});
       }
     }
@@ -132,6 +238,51 @@ use strict;
   return $outcode;
 }
 
+=pod
+
+=head2 update
+
+This method implements an UPDATE SQL query on the database and table
+associated with the tag's namespace.  If this tag is nested in a related
+namespace, the column to be updated will be determined via an intermediate
+mapping database table, defined in the XML::Template configuration file.  
+See C<select> for more details on related namespaces.
+
+The children of this element should be tags with names of the database
+table columns and their new values.  For instance:
+
+  <xml xmlns:item="http://syrme.net/xml-template/block/v1">
+    <item:update name="item1">
+      <item:title>Title</item:title>
+      <item:description>Description</item:description>
+    </item:update>
+  </xml>
+
+These children tags are handled by the AUTOLOAD subroutine.
+
+The following attributes are used:
+
+=over 4
+
+=item name
+
+A comma-separated list of the names of the primary keys of the database
+column to select.  The primary keys and their order is specified in the
+XML::Template configuration file.  This attribute is required for 
+updating.
+
+=item insert
+
+If C<true>, insert a new column in the database table if the one named by
+the attribute C<name> is not found.  The default value is C<false>.
+
+=back
+
+Remaining attributes will be used to constrain the selection of which 
+column to update.  See C<select> for more details.
+
+=cut
+
 sub update {
   my $self = shift;
   my ($code, $attribs) = @_;
@@ -145,10 +296,10 @@ sub update {
 
   # Get database info.
   my $namespace = $self->namespace ();
-  my $namespace_info = $self->get_namespace_info ($namespace);
-  my $dbname = $namespace_info->{sourcename};
-  my $keys   = $namespace_info->{key};
-  my $table  = $namespace_info->{table};
+  my $source_mapping_info = $self->get_source_mapping_info (namespace => $namespace);
+  my $dbname = $source_mapping_info->{source};
+  my $table  = $source_mapping_info->{table};
+  my $keys   = $source_mapping_info->{keys};
 
   my$outcode = qq!
 do {
@@ -225,7 +376,7 @@ use strict;
           || die XML::Template::Exception->new ('DB', \$db->error ());
       } else {
         my \$insert = $insert;
-        if (defined \$insert && \$insert =~ /^yes\$/i) {
+        if (defined \$insert && \$insert =~ /^true\$/i) {
           if (defined $name) {
             my \@names = split (/\\s*,\\s*/, $name);
             my \$i = 0;
@@ -268,6 +419,34 @@ use strict;
   return $outcode;
 }
 
+=pod
+
+=head2 insert
+
+This method implements an INSERT SQL query on the database and table 
+associated with the tag's namespace.  If this tag is nested in a related 
+namespace, the relation table defined in the XML::Template configuration 
+file that maps rows between the two related tables will be updated.  
+See C<select> for more details on related namespaces.
+
+The children of this element should be tags with names of the database 
+table columns and their new values.  See C<update> for more details.
+
+The following attributes are used:
+
+=over 4
+
+=item name
+
+A comma-separated list of the names of the primary keys of the database
+column to insert.  The primary keys and their order is specified in the
+XML::Template configuration file.  This attribute is required for
+inserting.
+
+=back
+
+=cut
+
 sub insert {
   my $self = shift;
   my ($code, $attribs) = @_;
@@ -277,10 +456,10 @@ sub insert {
 
   # Get database info.
   my $namespace = $self->namespace ();
-  my $namespace_info = $self->get_namespace_info ($namespace);
-  my $dbname = $namespace_info->{sourcename};
-  my $keys   = $namespace_info->{key};
-  my $table  = $namespace_info->{table};
+  my $source_mapping_info = $self->get_source_mapping_info (namespace => $namespace);
+  my $dbname = $source_mapping_info->{source};
+  my $table  = $source_mapping_info->{table};
+  my $keys   = $source_mapping_info->{keys};
 
   my $outcode = qq!
 do {
@@ -322,21 +501,23 @@ use strict;
     }
 
     if (defined \$parent_namespace) {
-      my \$parent_namespace_info = \$process->get_namespace_info (\$parent_namespace);
-      if (defined \$parent_namespace_info->{relatedto} &&
-          defined \$parent_namespace_info->{relatedto}->{'$namespace'}) {
+      my \$parent_namespace_info = \$process->get_source_mapping_info (namespace => \$parent_namespace);
+      if (defined \$parent_namespace_info->{relation} &&
+          defined \$parent_namespace_info->{relation}->{'$namespace'}) {
+        my \$rtable = \$parent_namespace_info->{relation}->{'$namespace'}->{table};
+
         my \%map_values;
         foreach my \$key (split (',', '$keys')) {
           \$map_values{\$key} = \$values{\$key};
         }
 
         my \$i = 0;
-        foreach my \$key (split (',', \$parent_namespace_info->{key})) {
+        foreach my \$key (split (',', \$parent_namespace_info->{keys})) {
           \$map_values{\$key} = \$parent_names[\$i];
           \$i++;
         }
 
-        \$db->insert (Table	=> \$parent_namespace_info->{relatedto}->{'$namespace'}->{'table'},
+        \$db->insert (Table	=> \$rtable,
                      Values	=> \\\%map_values)
           || die XML::Template::Exception->new ('DB', \$db->error ());
       }
@@ -348,6 +529,33 @@ use strict;
 
   return $outcode;
 }
+
+=pod
+
+=head2 delect
+
+This method implements a DELETE SQL query on the database and table 
+associated with the tag's namespace.  If this tag is nesterd in a related 
+namespace, the column to be updated will be determined via an intermediate 
+maping database table, defined in the XML::Template configuration file.  
+See C<select> for more details on related namespaces.
+
+The following attributes are used:
+
+=over 4
+
+=item name
+
+A comma-separated list of the names of the primary keys of the database
+column to delete.  The primary keys and their order is specified in the
+XML::Template configuration file.  This attribute is not required.
+
+=back
+
+Remaining attributes will be used to constrain the selection of which
+column to delete.  See C<select> for more details.
+
+=cut
 
 sub delete {
   my $self = shift;
@@ -361,12 +569,12 @@ sub delete {
 
   # Get database info.
   my $namespace = $self->namespace ();
-  my $namespace_info = $self->get_namespace ($namespace);
-  my $dbname = $namespace_info->{sourcename};
-  my $keys   = $namespace_info->{key};
-  my $table  = $namespace_info->{table};
+  my $source_mapping_info = $self->get_source_mapping_info (namespace => $namespace);
+  my $dbname = $source_mapping_info->{source};
+  my $table  = $source_mapping_info->{table};
+  my $keys   = $source_mapping_info->{keys};
 
-  my $outcode = qq!
+  my $outcode = qq{
 do {
   \$vars->create_context ();
 
@@ -381,10 +589,10 @@ use strict;
 
   my \$table;
   if (defined \$parent_namespace) {
-    my \$parent_namespace_info = \$process->get_namespace_info (\$parent_namespace);
-    if (defined \$parent_namespace_info->{relatedto} &&
-        defined \$parent_namespace_info->{relatedto}->{'$namespace'}) {
-      \$table = \$parent_namespace_info->{relatedto}->{'$namespace'}->{table};
+    my \$parent_namespace_info = \$process->get_source_mapping_info (namespace => \$parent_namespace);
+    if (defined \$parent_namespace_info->{relation} &&
+        defined \$parent_namespace_info->{relation}->{'$namespace'}) {
+      \$table = \$parent_namespace_info->{relation}->{'$namespace'}->{table};
     } else {
       \$table = '$table';
     }
@@ -411,11 +619,11 @@ use strict;
   }
 
   if (defined \$parent_namespace) {
-    my \$parent_namespace_info = \$process->get_namespace_info (\$parent_namespace);
-    if (defined \$parent_namespace_info->{relatedto} &&
-        defined \$parent_namespace_info->{relatedto}->{'$namespace'}) {
+    my \$parent_namespace_info = \$process->get_source_mapping_info (namespace => \$parent_namespace);
+    if (defined \$parent_namespace_info->{relation} &&
+        defined \$parent_namespace_info->{relation}->{'$namespace'}) {
       my \$i = 0;
-      foreach my \$key (split (',', \$parent_namespace_info->{key})) {
+      foreach my \$key (split (',', \$parent_namespace_info->{keys})) {
         \$where .= ' and ' if defined \$where;
         \$where .= "\$table.\$key='\$parent_names[\$i]'";
         \$i++;
@@ -441,26 +649,29 @@ use strict;
     }
 
     if (defined $name) {
-      my \$parent_namespace_info = \$process->get_namespace_info (\$parent_namespace);
-      if (\! defined \$parent_namespace ||
-          (defined \$parent_namespace &&
-           (\! defined \$parent_namespace_info->{relatedto} ||
-            \! defined \$parent_namespace_info->{relatedto}->{'$namespace'}))) {
+      my \$parent_namespace_info = \$process->get_source_mapping_info (namespace => \$parent_namespace);
+      if (! defined \$parent_namespace
+          || (defined \$parent_namespace
+              && (! defined \$parent_namespace_info->{relation}
+                  || ! defined \$parent_namespace_info->{relation}->{'$namespace'}))) {
+
         my \$namespace_info = \$process->get_namespace_info ('$namespace');
-        if (defined \$namespace_info->{relatedto}) {
-          foreach my \$namespace (keys \%{\$namespace_info->{relatedto}}) {
-            my \$map_table = \$namespace_info->{relatedto}->{\$namespace}->{table};
+        if (defined \$namespace_info->{relation}) {
+          foreach my \$namespace (keys \%{\$namespace_info->{relatedion}}) {
+            my \$source_mapping_info = \$process->get_source_mapping_info (namespace => \$namespace);
+            my \$rtable = \$source_mapping_info->{relation}->{\$namespace}->{table};
+
             my \$where;
             \@names = split (/\\s*,\\s*/, $name);
             my \$i = 0;
             foreach my \$key (split (',', '$keys')) {
               \$where .= ' and ' if defined \$where;
-              \$where .= "\$map_table.\$key='\$names[\$i]'";
+              \$where .= "\$rtable.\$key='\$names[\$i]'";
               \$i++;
             }
 
             if (defined \$db) {
-              \$db->delete (Table	=> \$map_table,
+              \$db->delete (Table	=> \$rtable,
                             Where	=> \$where)
                 || die XML::Template::Exception->new ('DB', \$db->error ());
             }
@@ -472,10 +683,63 @@ use strict;
 
   \$vars->delete_context ();
 };
-  !;
+  };
 
   return $outcode;
 }
+
+=pod
+
+=head2 alter
+
+This method implements an ALTER SQL query on the database and table 
+associated with the tag's namespace.  The following attributes are used:
+
+=over 4
+
+=item values
+
+=item action
+
+=item columns, column
+
+=item new_column
+
+=item type
+
+=item length
+
+=item decimals
+
+=item unsigned
+
+=item zerofull
+
+=item binary
+
+=item null
+
+=item def_default
+
+=item auto_increment
+
+=item def_primary_key
+
+=item position
+
+=item index
+
+=item primary_key
+
+=item unique
+
+=item fulltext
+
+=item default
+
+=item new_table
+
+=cut
 
 sub alter {
   my $self = shift;
@@ -523,7 +787,7 @@ do {
   if (defined \$db) {
     my \@values;
     my \$values = $values;
-    \@values = split (/\s*,\s*/, \$values) if defined \$values;
+    \@values = split (/\\s*,\\s*/, \$values) if defined \$values;
     \$db->alter (
        Table		=> '$table',
        Action		=> $action,
@@ -559,6 +823,51 @@ do {
   return $outcode;
 }
 
+=pod
+
+=head2 foreach
+
+XML::Template::Element::DB is a subclass of
+L<XML::Template::Element::Iterator>, so it inherits the C<foreach> method,
+which in conjunction with the iterator methods defined in this module,
+implements iteration through the rows in a database.  For example,
+
+  <item:foreach xmlns:item="http://syrme.net/xml-template/item/v1"
+                fields="*">
+    ${title}: ${description}
+  </item:foreach>
+
+iterates through each column in the items table and prints the title and 
+description.
+
+The following attributes are used:
+
+=over 4
+
+=item fields, field
+
+A comma separated list of the database table fields to return.  To return
+all fields, use '*'.  For each field returned a variable will be set with
+the field's name and value.  These variables will be available in the
+content of the select element.
+
+=item orderby
+
+A comma-separated list of the fields used to order the list of rows being 
+iterated through.
+
+=item limit
+
+Constrains the number of rows being iterated through.  If one integer, it 
+specifies the number of rows to iterate through, starting at the 
+beginning.  If two integers separated by a comma, the first specifies the 
+offset at which to start iterating, and the second specifies the number of 
+rows to iterate through.
+
+=back
+
+=cut
+
 sub loopinit {
   my $self    = shift;
   my $attribs = shift;
@@ -576,10 +885,10 @@ sub loopinit {
 
   # Get database info.
   my $namespace = $self->namespace ();
-  my $namespace_info = $self->get_namespace_info ($namespace);
-  my $dbname = $namespace_info->{sourcename};
-  my $keys   = $namespace_info->{key};
-  my $table  = $namespace_info->{table};
+  my $source_mapping_info = $self->get_source_mapping_info (namespace => $namespace);
+  my $dbname = $source_mapping_info->{source};
+  my $table  = $source_mapping_info->{table};
+  my $keys   = $source_mapping_info->{keys};
 
   my $outcode = qq!
 my %attribs = ($attribs_named_params);
@@ -603,22 +912,24 @@ no strict;
 use strict;
 
   if (defined \$parent_namespace) {
-    my \$parent_namespace_info = \$process->get_namespace_info (\$parent_namespace);
-    if (defined \$parent_namespace_info->{relatedto} &&
-        defined \$parent_namespace_info->{relatedto}->{'$namespace'}) {
-      \$tables .= ",\$parent_namespace_info->{relatedto}->{'$namespace'}->{table}";
+    my \$parent_namespace_info = \$process->get_source_mapping_info (namespace => \$parent_namespace);
+    if (defined \$parent_namespace_info->{relation} &&
+        defined \$parent_namespace_info->{relation}->{'$namespace'}) {
+      my \$rtable = \$parent_namespace_info->{relation}->{'$namespace'}->{table};
+
+      \$tables .= ",\$rtable";
 
       my \$i = 0;
       foreach my \$key (split (',', '$keys')) {
         \$where .= ' and ' if defined \$where;
-        \$where .= "$table.\$key=\$parent_namespace_info->{relatedto}->{'$namespace'}->{table}.\$key";
+        \$where .= "$table.\$key=\$rtable.\$key";
         \$i++;
       }
 
       \$i = 0;
-      foreach my \$key (split (',', \$parent_namespace_info->{key})) {
+      foreach my \$key (split (',', \$parent_namespace_info->{keys})) {
         \$where .= ' and ' if defined \$where;
-        \$where .= "\$parent_namespace_info->{relatedto}->{'$namespace'}->{table}.\$key='\$parent_names[\$i]'";
+        \$where .= "\$rtable.\$key='\$parent_names[\$i]'";
         \$i++;
       }
     }
@@ -681,7 +992,7 @@ sub set_loopvar {
   # Get database info.
   my $namespace = $self->namespace ();
   my $namespace_info = $self->get_namespace_info ($namespace);
-  my $keys = $namespace_info->{key};
+  my $keys = $namespace_info->{keys};
 
   my $outcode = qq!
   while (my (\$name, \$val) = each \%\$__value) {
@@ -691,7 +1002,7 @@ sub set_loopvar {
   my (\$__parent_namespace, \@__parent_names);
   if (defined \$__value) {
     \$__parent_namespace = '$namespace';
-    foreach my \$key (split (/\s*,\s*/, '$keys')) {
+    foreach my \$key (split (/\\s*,\\s*/, '$keys')) {
       push (\@__parent_names, \$__value->{\$key});
     }
   }
@@ -716,7 +1027,7 @@ sub get_next {
         my \$values = \$1;
         \$values =~ s/^'//;
         \$values =~ s/'\$//;
-        my \@values = split (/',\s*'/, \$values);
+        my \@values = split (/',\\s*'/, \$values);
         \$__value->{Values} = \\\@values;
       } else {
         \$__value->{Size} = \$1;
@@ -736,7 +1047,7 @@ sub foreach_describe {
   my ($code, $attribs) = @_;
 
   my $namespace = $self->namespace ();
-  $attribs->{"$namespace\01query"} = "'describe'";
+  $attribs->{"{$namespace}query"} = "'describe'";
   return $self->foreach ($code, $attribs);
 }
 
@@ -767,6 +1078,23 @@ use strict;
 
   return $outcode;
 }
+
+=pod
+
+=head1 AUTHOR
+
+Jonathan Waxman
+<jowaxman@bbl.med.upenn.edu>
+
+=head1 COPYRIGHT
+
+Copyright (c) 2002-2003 Jonathan A. Waxman
+All rights reserved.
+
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+=cut
 
 
 1;

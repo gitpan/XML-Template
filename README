@@ -1,28 +1,34 @@
-                              XML::Template
-                                  v3.00
+                                 XML::Template
+                                     v3.20
 
-       Copyright (c) 2002 Jonathan A. Waxman.  All rights reserved.
+       Copyright (c) 2002-2003 Jonathan A. Waxman.  All rights reserved.
 
-          This is free software; you can redistribute it and/or
-             modify it under the same terms as Perl itself.
+             This is free software; you can redistribute it and/or
+                modify it under the same terms as Perl itself.
 
 
 OVERVIEW
 --------
 
-XML::Template is a free X(HT)ML-based document processing framework for
+XML::Template is an X(HT)ML-based document processing framework written in
 Perl designed specifically for constructing web sites and web
-applications. The essential framework of site provides XML document
-parsing and caching services; scalar, array, and nested variables;
-and XPath support.  Plug-in modules written in Perl may be easily added to
-extend the available tag set (using XML namespace conventions) and thereby
-functionality.  XML::Template comes with a number of standard plug-in
-modules including modules for variable iteration, conditionals, and
-performing abstract database queries and iteration.
+applications. The essential framework of XML::Template provides XML
+document parsing and caching services; scalar, array, and nested
+variables; and XPath support.  Plug-in modules written in Perl may be
+easily added to extend the available tag set using XML namespace
+conventions.  XML::Template comes with numerous standard plug-in modules
+including modules for variable iteration, conditionals, exception
+handling, and performing abstract database queries and iterations.
 
-The intention of XML::Template is to provide a consistent framework for
-developing dynamic web sites and web applications entirely in XHTML.  
-Because of its modularity, no particular design strategy or tag-set is
+The intention of XML::Template is to provide a simple and consistent
+framework for developing dynamic web sites and web applications entirely
+in XHTML.  There are many excellent options available that can
+approximately do this;  however, at the time I started writing this, I was
+unable to find anything that offered exactly what I wanted and what
+XML::Template provides.  Even today, I am still unsatisfied with all the
+other alternatives, but that is another discussion.
+
+Because of its modularity, no particular design strategy or tagset is
 imposed on the user, however, the standard modules that come with
 XML::Template provide suggestive design elements.  In particular, special
 attention is given to database integration and modular design strategies.
@@ -30,7 +36,36 @@ attention is given to database integration and modular design strategies.
 XML::Template comes with a web site administrator and content management
 application, siteadmin, designed entirely using the XML::Template
 framework and standard modules. It offers a powerful example of the kind
-of web application that site can be used to create.
+of web application that XML::Template can be used to create.
+
+
+FEATURES
+--------
+
+o Written entirely in Perl.
+o Highly modular and extensible design.
+o Templates are converted to Perl code and cached to files resulting in 
+  extremely fast performance.
+o Supports scalar, array, nested (hash), and XPath variables and variable 
+  subroutines.
+o Support variable tags.  This feature allows variable substitution in 
+  an actual tagname itself, so the tag that gets used can be defined 
+  dynamically.
+o Easy to extend the tagset using XML namespace conventions.
+o Highly configurable via system-wide and host-specific XML configuration 
+  files.  Multiple virtual hosts and data sources can be defined.  
+  Namespace configuration supports alternate attribute parsers, attribute 
+  type checking, nested and "related" tag specification, and body content 
+  attributes.
+o Standard modules include support for conditionals, mail, exceptions, 
+  file inclusion and IO, variables, variable and abstract iterators, 
+  forms, and DBI database queries.  The database modules include support 
+  for data items, groups, XHTML blocks, and users.
+o Special attention given to database support - very little if any SQL is 
+  necessary to perform the most common kinds of database queries.  
+  Related database table queries are supported using the concept of 
+  related namespaces.
+o Exception handling and exception XHTML template support.
 
 
 INSTALLATION
@@ -157,10 +192,10 @@ the var namespace:
 
   <xml xmlns:var="http://syrme.net/xml-template/var/v1">
     <var:set name="names">
-      <var:element>Jonathan Waxman</var:element>
-      <var:element>Josh Marcus</var:element>
-      <var:element>Kristina Clair</var:element>
       <var:element>Goose</var:element>
+      <var:element>Kristina Clair</var:element>
+      <var:element>Josh Marcus</var:element>
+      <var:element>Jonathan Waxman</var:element>
     </var:set>
   </xml>
 
@@ -194,6 +229,11 @@ the var namespace:
 XPath Variables
 ---------------
 
+An XPath variable is a variable that extracts a part of an XML document 
+using an XPath query.  They look like: ${<varname>/<xpath>}, where 
+<varname> is the name of the variable that contains the XML document and 
+<xpath> is an XPath query.
+
 Suppose you set the value of a variable to some XML:
 
   <set xmlns="http://syrme.net/xml-template/var/v1"
@@ -209,7 +249,7 @@ Suppose you set the value of a variable to some XML:
   </set>
 
 You can access different parts of the XML document stored in the variable 
-xml, using XPath expressions.  Some examples:
+"xml" using XPath expressions.  Some examples:
 
   ${xml/person[@username="jowaxman"/firstname}
   ${xml/person/@username}
@@ -225,25 +265,25 @@ variables inside of variables.  For instance,
     ${person.${names[1]}.address}
   </xml>
 
-If a variable name contains "." or "/", you can either backslash them, or 
-surround the text they are embedded within by single quotes.  Single 
-quotes are especially useful if the variable name comes from another 
-variable.  For instance,
+If a variable name contains "." or "/", you can either backslash them, or
+surround the text they are embedded within by curly braces.  This is
+especially useful if the variable name comes from another variable.  For
+instance,
 
   <xml>
     ${person.Jonathan\.Waxman.address}<br/>
-    ${person.'Jonathan/Waxman'.address}<br/>
-    ${person.'${name}'.address}
+    ${person.{Jon/athan.Waxman}.address}<br/>
+    ${person.{${name}}.address}
   </xml>
 
 Subroutines
 -----------
 
-Subroutines can be defined to operate on the values of variables.  They 
-look like: ${<var>}.<subroutine> or ${<var>}.<subroutine> (<params>), 
-where <var> is some variable, <subroutine> is the subroutine name, and 
-<params> is an optional comma-separated list of parameters to the 
-subroutine.  For instance,
+Subroutines can be defined to operate on the values of variables.  They
+look like: ${<varname>}.<subroutine> or ${<varname>}.<subroutine>
+(<params>), where <varname> is some variable, <subroutine> is the
+subroutine name, and <params> is an optional comma-separated list of
+parameters to the subroutine.  For instance,
 
 <xml xmlns:cond="http://syrme.net/xml-template/cond/v1"
      xmlns:var="http://syrme.net/xml-template/var/v1">

@@ -1,60 +1,66 @@
+###############################################################################
 # XML::Template::Parser
 #
-# Copyright (c) 2002 Jonathan A. Waxman <jowaxman@law.upenn.edu>
+# Copyright (c) 2003 Jonathan A. Waxman <jowaxman@bbl.med.upenn.edu>
 # All rights reserved.
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.
-
-
+###############################################################################
 package XML::Template::Parser;
 use base qw(XML::Template::Base);
-
-use strict;
-use XML::Template::Exception;
-use XML::Parser;
 
 
 =pod
 
 =head1 NAME
 
-XML::Template::Parser - Document parsing module for XML::Template.
+XML::Template::Parser - SAX handler for parsing XML::Template documents.
 
 =head1 SYNOPSIS
 
-  use XML::Template::Parse;
+  use XML::SAX::ParserFactory;
+  use XML::Template::Parser
 
-  my $parser = XML::Template::Parse->new ();
-  $parser->parse ($document);
+  my $handler = XML::Template::Parser->new ();
+  my $parser = XML::SAX::ParserFactory->parser (Handler => $handler);
+  my $code = eval { $parser->parse_string ($xml) };
 
 =head1 DESCRIPTION
 
-This module provides XML document parsing for XML::Template.  Whenever a
-plug-in element type is encountered, a subroutine in the associated
-Element module is called.  However, only plug-in elements whose namespaces
-have been defined in the document will be processed.  Much of the default
-element and attribute processing behavior can be modified in the
-XML::Template config file.  See C<xml-template.conf> for more information.
+This module is the XML::Template document parser.  It is implemented as an
+XML::SAX handler.  Whenever an element in a namespace that has been
+configured is encountered, a subroutine is called in the Perl module
+associated with the namespace.  The subroutine should return Perl code
+that generates the content of the element.  Much of the default element
+and attribute processing behavior can be modified in the XML::Template
+configuration file.  See L<XML::Template::Config> for more details.
 
 =head1 CONSTRUCTOR
 
-A constructor method C<new> is provided by C<XML::Template::Base>.  A list
-of named configuration parameters may be passed to the constructor.  The
-constructor returns a reference to a new parser object or undef if an
-error occurred.  If undef is returned, you can use the method C<error> to
+A constructor method C<new> is provided by L<XML::Template::Base>.  A list 
+of named configuration parameters may be passed to the constructor.  The 
+constructor returns a reference to a new parser object or under if an 
+error occurred.  If undef is returned, you can use the method C<error> to 
 retrieve the error.  For instance:
 
   my $parser = XML::Template::Parser->new (%config)
     || die XML::Template::Parser->error;
 
-The following named configuration parameters are supported by this module:
+The following named configuration parameters may be passed to the 
+constructor:
 
 =over 4
 
 =item String
 
-A reference to custom attribute string parser.
+A blessed reference to an object that parses strings and returns an
+XML::Template Perl code representation.  This value will override the
+default value C<$STRING> in L<XML::Template::Config>.  The default string
+parser object is of the class XML::Template::Parser::String.  This module
+is generated from the grammar file C<XML/Template/Parser/string.grammar>
+by Parse::RecDescent.  To generate a new string parser, see
+C<XML/Template/Parser/README>.
 
 =back
 
@@ -63,19 +69,27 @@ A reference to custom attribute string parser.
 =head2 _init
 
 This method is the internal initialization function called from
-C<XML::Template::Base> when a new cache object is created.
+L<XML::Template::Base> when a new parser object is created.
 
 =cut
 
 sub _init {
-  my $self   = shift;
+  my $self = shift;
   my %params = @_;
 
-  print ref ($self) . "->_init\n" if $self->{_debug};
-
-  # Store a string parser object.
   $self->{_string} = $params{String} || XML::Template::Config->string (%params)
     || return $self->error (XML::Template::Config->error);
+
+# XXX Should keep all this on a stack so multiple documents can be parsed from 
+# a single parser object - push on start_document, pop and end_document.
+
+  $self->{_namespaces} = [];
+  $self->{_objects}    = {};
+  $self->{_attribs}    = [];
+  $self->{_code}       = [''];
+  $self->{_text}       = '';
+  $self->{_line}       = 0;
+  $self->{_depth}      = 0;
 
   return 1;
 }
@@ -84,327 +98,375 @@ sub _init {
 
 =head1 PUBLIC METHODS
 
-=head2 parse
+=head2 element_string
 
-  $parser->parse ($document)
-    || die $parser->error;
+  my $text = $self->element_string ($type, $element);
 
-This method initiates XML document parsing.  It takes a single parameter, 
-a reference to an XML::Template::Document object, which contains the 
-actual XML text.
-
-C<parse> returns 1 if the parse was successful, other wise it returns 
-C<undef>.
+This method constructs the XML for an XML::SAX element data structure.  If 
+type is 1, attributes are generated.
 
 =cut
 
-sub parse {
-  my $self     = shift;
-  my $document = shift;
+sub element_string {
+  my $self = shift;
+  my ($type, $element) = @_;
 
-  print ref ($self) . "->parse\n" if $self->{_debug};
+  my $string;
+  if ($type == 1) {
+    $string = "<$element->{Name}";
+    while (my ($key, $attrib) = each %{$element->{Attributes}}) {
+      $string .= qq{ $attrib->{Name}="$attrib->{Value}"};
+    }
+    $string .= '>';
 
-  # Get XML document.
-  my $xml = $document->xml;
+  } else {
+    $string = "</$element->{Name}>";
+  }
 
-  # Replace variable tags with 'core:element' tag.
-  $xml =~ s/<\/([^\s]*\${[^}]*}[^\s>]*>)/<\/core:element>/g;
-  $xml =~ s/<([^\s>]*\${[^}]*}[^\s>]*)/<core:element core:name="$1"/g;
-
-  # Parse it.
-  my $parser = XML::Parser->new (
-                 ErrorContext	=> 2,
-                 Namespaces	=> 1,
-                 Handlers	=> {Start	=> \&StartTag,
-                                    End		=> \&EndTag,
-                                    Char	=> \&Char});
-  $parser->{_self}     = $self;
-  $parser->{_content}  = 'xml';
-  $parser->{_objects}  = {};
-  $parser->{_attribs}  = [];
-  $parser->{_code}     = [''];
-  $parser->{_text}     = '';
-  my $code = eval { $parser->parse ("<__xml>$xml</__xml>") };
-  return $self->error ("ERROR [parser]: $@") if $@;
-
-  # Assemble and store the final Perl code.
-  my $code = $parser->{_code}->[0];
-  $code = qq!
-sub {
-  my \$process = shift;
-
-  my \$vars = \$process->{_vars};
-  \$vars->set ('Config' => \$process->{_conf});
-
-  $code
-}
-  !;
-  $document->code ($code);
-
-  return 1;
+  return $string;
 }
 
-sub check_attrib_types {
-  my $self    = shift;
-  my ($namespace, $type, $attribs) = @_;
+=pod
 
-  my $element_info = $self->get_tag ($namespace, $type);
-  if (defined $element_info &&
-      defined $element_info->{attrib}) {
-    while (my ($attrib, $value) = each %$attribs) {
-      my ($attrib_namespace, $attrib_name) = split (/\01/, $attrib);
-      if (defined $element_info->{attrib}->{$attrib_name} &&
-          defined $element_info->{attrib}->{$attrib_name}->{type}) {
-        if ($value !~ /$element_info->{attrib}->{$attrib_name}->{type}/) {
-          return $self->error ("Attribute '$attrib' of element '$type' is not of specified type.");
-        }
+=head1 XML::SAX SUBROUTINES
+
+=head2 start_element
+
+This method is invoked at the beginning of every element.  The following 
+algorithm is used to parse start elements:
+
+  - Increment depth level.
+  - If not skipping
+    - Add new namespaces to list, push onto stack.
+    - If namespace configured
+      - Check proper nesting.
+      - If content type is not 'xml', begin skipping at current depth 
+        level.
+      - Check for missing required attributes.
+      - Generate code for attributes (with configured string parsers), 
+        add to attribs hash.
+      - Create and cache element object, if not nested.  Call constructor 
+        with hash of defined namespaces and current namespace.
+      - Push attribs hash and code onto stacks.
+    - Else
+      - Generate code to print XML, append to code private data.
+  - Else
+    - Generate XML, append to text private data.
+  - Push element onto stack.
+
+=cut
+
+sub start_element {
+  my $self = shift;
+  my $element = shift;
+
+  # The element type __xml is used to wrap pieces of XML that may
+  # not have a root element.  Skip it.
+  return if $element->{Name} eq '__xml';
+
+  $self->{_depth}++;
+
+  if (! defined $self->{_skip_until}) {
+    # Add new namespaces to list.
+    my %namespaces;
+    while (my ($key, $attrib) = each %{$element->{Attributes}}) {
+      if ($attrib->{Prefix} eq 'xmlns') {
+        $namespaces{$attrib->{LocalName}} = $attrib->{Value};
       }
     }
-  }
-}
+    unshift (@{$self->{_namespaces}}, \%namespaces);
 
-sub StartTag {
-  my $parser = shift;
-  my $type   = shift;
+    my $namespace = $element->{NamespaceURI};
 
-  # Handle any text accumulated by the Char handler.
-  Text ($parser);
-
-  # The element type __xml is used to wrap pieces of XML that may 
-  # not have a root element.  Skip it.
-  return if $type eq '__xml';
-
-  # Get the processor object.
-  my $self = $parser->{_self};
-
-  # Not skipping - Process.
-  if (! defined $parser->{_skip_until}) {
-    # Get namespace info for the current element type.
-    my $namespace = $parser->namespace ($type);
+    # Namespace is defined - process.
     my $namespace_info = $self->get_namespace_info ($namespace);
-
-    # If namespace info is defined, prepare to call the associated 
-    # subroutine when the end tag arrives.
     if (defined $namespace_info) {
-      # Set the attrib names to "<namespace>\01<attribname>" so they can be
-      # uniquely identified in a hash.
-      for (my $i = 0; $i < @_; $i += 2) {
-        my $attrib = $_[$i];
-        my $namespace = $parser->namespace ($attrib);
-        $_[$i] = defined($namespace) ? "$namespace\01$attrib"
-                                     : "\01$attrib";
-      }
-      my %attribs = @_;
+      my $name = $element->{LocalName};
 
-      # Load element module.
-      XML::Template::Config->load ($namespace_info->{module})
-        || die $self->error (XML::Template::Config->error ());
+      # Get parent element name.
+      my $parent_element = $self->{_stack}->[0];
 
-      # Get parent element.
-      my $parent_type = $parser->current_element ();
-
-      # Find element object if nested.
-      # Do some element and attribute checks.
+      # Check proper element nesting.  If nested, don't need to create new 
+      # object - use parent one.
       my $create_object = 1;
-      my $element_info = $self->get_element_info ($namespace, $type);
-      if (defined $element_info) {
-        # The element is designated as a nested element -- use the parent
-        # element object.  If no parent element object, complain.
-        if (defined $element_info->{nestedin}) {
-          if (defined $element_info->{nestedin}->{$parent_type} &&
-              $parser->namespace ($parent_type) eq $namespace) {
+      my $element_info = $self->get_element_info ($namespace, $name);
+      if (defined $element_info->{nestedin}) {
+        my @nestedin_names = ref ($element_info->{nestedin})
+                               ? @{$element_info->{nestedin}}
+                               : $element_info->{nestedin};
+        foreach my $nestedin_name (@nestedin_names) {
+          if ($nestedin_name eq $parent_element->{LocalName}
+              && $namespace eq $parent_element->{NamespaceURI}) {
             $create_object = 0;
+            last;
           } else {
-            $parser->xpcroak ("Element '$type' not properly nested");
+            die "$self->{_line}: Element '$element->{Name}' not properly nested (nested in {$parent_element->{NamespaceURI}}$parent_element->{LocalName})";
           }
         }
+      }
 
-        # Determine content type.
-        if (defined $element_info->{content} &&
-            $element_info->{content} ne 'xml') {
-          $parser->{_skip_until} = $parser->depth ();
+      # Determine content type.
+      $self->{_skip_until} = $self->{_depth}
+        if defined $element_info->{content}
+           && $element_info->{content} ne 'xml';
+
+      # Check for missing required attributes.
+      foreach my $attrib ($self->get_attribs ($namespace, $name)) {
+        my $attrib_info = $self->get_attrib_info ($namespace, $name, $attrib);
+        if (defined $attrib_info->{required}
+            && $attrib_info->{required} eq 'true'
+            && ! exists $element->{Attributes}->{"{$namespace}$attrib"}
+            && ! exists $element->{Attributes}->{$attrib}) {
+          die "$self->{_line}: Required attribute '$attrib' not present in tag '$name'";
         }
+      }
 
-        # Check attributes.
-        if (defined $element_info->{attrib}) {
-          while (my ($attrib, $attrib_info) = each %{$element_info->{attrib}}) {
-            if ($attrib_info->{required} eq 'yes' &&
-                ! exists $attribs{"$namespace\01$attrib"} &&
-                ! exists $attribs{"\01$attrib"}) {
-              $parser->xpcroak ("Required attribute '$attrib' not present in tag '$type'");
+      # Generate code for attributes.
+      my %attribs;
+      while (my ($key, $attrib) = each %{$element->{Attributes}}) {
+        if (! defined $attrib->{NamespaceURI}
+            || $attrib->{NamespaceURI} eq $namespace) {
+          my $attrib_name = defined $attrib->{NamespaceURI}
+                              ? $attrib->{LocalName} : $attrib->{Name};
+          if ($attrib->{Value} eq '') {
+            $attribs{$key} = '""';
+          } else {
+            my $attrib_info = $self->get_attrib_info ($namespace, $name, $attrib_name);
+            if (defined $attrib_info) {
+              if (defined $attrib_info->{parse}
+                  && $attrib_info->{parse} eq 'false') {
+# xxx backspace special chars??
+                $attribs{$key} = qq{"$attrib->{Value}"};
+              } else {
+                if (defined $attrib_info->{parser}) {
+# xxx use load () ?
+                  my $parser = $attrib_info->{parser};
+                  eval "use $parser";
+                  die $@ if $@;
+                  my $string_parser = $parser->new ();
+                  $attribs{$key} = $string_parser->text ($attrib->{Value});
+                } else {
+                  $attribs{$key} = $self->{_string}->text ($attrib->{Value});
+                }
+              }
+            } else {
+              $attribs{$key} = $self->{_string}->text ($attrib->{Value});
             }
           }
         }
       }
 
       # Create and cache element object.
-      my $object;
       if ($create_object) {
-        my %namespaces;
-        foreach my $prefix ($parser->current_ns_prefixes ()) {
-          $namespaces{$prefix} = $parser->expand_ns_prefix ($prefix);
-        }
-        $object = $namespace_info->{module}->new (\%namespaces, $namespace);
-        unshift (@{$parser->{_objects}->{$namespace_info->{module}}}, $object);
+        # Load element module.
+        my $module = $namespace_info->{module};
+        XML::Template::Config->load ($module)
+          || die $self->error (XML::Template::Config->error ());
 
-      # Find object on cache.
-      } else {
-        $object = $parser->{_objects}->{$namespace_info->{module}}->[0];
-      }
-
-      # Generate code for attributes.
-      while (my ($attrib, $value) = each %attribs) {
-        my ($attrib_namespace, $attrib_name) = split (/\01/, $attrib);
-
-        # Value is empty - Set value to empty quotes.
-        if ($value eq '') {
-          $attribs{$attrib} = '""';
-
-        # Value exists - parse unless config says not to.
-        } else {
-          my $string_parser = $self->{_string};
-          if (defined $element_info->{attrib} &&
-              defined $element_info->{attrib}->{$attrib_name}) {
-            if ($element_info->{attrib}->{$attrib_name}->{parse} ne 'no') {
-              if (defined $element_info->{attrib}->{$attrib_name}->{parser}) {
-                eval "use $element_info->{attrib}->{$attrib_name}->{parser}";
-                die $@ if $@;
-                $string_parser = $element_info->{attrib}->{$attrib_name}->{parser}->new ();
-              }
-              $attribs{$attrib} = $string_parser->text ($value);
-            } else {
-# XXX quote escape
-              $attribs{$attrib} = qq{"$attribs{$attrib}"};
-            }
-          } else {
-            $attribs{$attrib} = $string_parser->text ($value);
+        # Create object and push onto object stack.
+        my %tnamespaces;
+        foreach my $namespaces (@{$self->{_namespaces}}) {
+          while (my ($key, $val) = each %$namespaces) {
+            $tnamespaces{$key} = $val;
           }
         }
+        my $object = $module->new (\%tnamespaces, $namespace);
+        unshift (@{$self->{_objects}->{$module}}, $object);
       }
 
       # Push attribs and new code block.
-      unshift (@{$parser->{_attribs}}, \%attribs);
-      unshift (@{$parser->{_code}},    '');
+      unshift (@{$self->{_attribs}}, \%attribs);
+      unshift (@{$self->{_code}}, '');
 
     } else {
-      # Create text to parse.
-      my $text = "<$type";
-      while (@_) {
-        $text .= ' ' . shift () . '="' . shift () . '"';
-      }
-      $text .= '>';
-
+      my $text = $self->element_string (1, $element);
       $text = $self->{_string}->text ($text);
-#      $text =~ s/@/\\@/g; 
-      $parser->{_code}->[0] .= "\$process->print ($text);\n";
+      $self->{_code}->[0] .= "\$process->print ($text);\n";
     }
 
   } else {
-    # Create text to parse.
-    my $text = "<$type";
-    while (@_) {
-      $text .= ' ' . shift () . '="' . shift () . '"';
-    }
-    $text .= '>';
-
-    $parser->{_text} .= $text;
+    my $text = $self->element_string (1, $element);
+    $text = $self->{_string}->text ($text);
+    $self->{_text} .= $text;
   }
+
+  unshift (@{$self->{_stack}}, $element);
 }
 
-sub EndTag {
-  my ($parser, $type) = @_;
-  my $self = $parser->{_self};
-  my $vars = $parser->{_vars};
+=pod
 
-  # Handle any text accumulated by the Char handler.
-  Text ($parser);
+=head2 end_element
+
+This method is invoked at the end of every element.  The following 
+algorithm is used to parse end elements:
+
+  - Pop element from stack.
+  - If skipping should stop, retrieve collected text from private data, 
+    stop skipping.
+  - If not skipping
+    - Pop namespace list from stack.
+    - If namespace configured
+      - If not nested, pop element object from stack, otherwise just get 
+        it.
+      - Pop attribs and code from stacks.
+      - If content type is 'empty', call element subroutine with undef and 
+        attribs, else if content type is 'text' call element subroutine 
+        with skipped text and attribs, else call element subroutine with 
+        code and attribs.
+    - Else
+      - Generate code to print XML, append to code private data.
+  - Else
+    - Generate XML, append to text private data.
+  - Decrement depth level.
+
+
+=cut
+
+sub end_element {
+  my $self = shift;
+  my $element = shift;
 
   # The element type __xml is used to wrap pieces of XML that may
   # not have a root element.  Skip it.
-  return if $type eq '__xml';
+  return if $element->{Name} eq '__xml';
 
-# xxx what about something like html:br?
-  if ($type ne 'br') {
-    my $text;
-    if (defined $parser->{_skip_until} &&
-        $parser->{_skip_until} eq $parser->depth ()) {
-      undef $parser->{_skip_until};
-      $text = $parser->{_text};
-      $parser->{_text} = '';
-    }
+# xxx move inside skip until block?
+  shift (@{$self->{_stack}});
 
-    if (! defined $parser->{_skip_until}) {
-      # Get namespace info for the current element type.
-      my $namespace = $parser->namespace ($type);
-      my $namespace_info = $self->get_namespace_info ($namespace);
+  return if $element->{Name} eq 'br';
 
-      # If namespace info is defined, call the element subroutine.
-      if (defined $namespace_info) {
-        # Get element object.  If element is not nested, pop the object
-        # out of the cache.
-        my $object;
-        my $element_info = $self->get_element_info ($namespace, $type);
-        if (defined $element_info &&
-            defined $element_info->{nestedin}) {
-          $object = $parser->{_objects}->{$namespace_info->{module}}->[0];
-        } else {
-          $object = shift (@{$parser->{_objects}->{$namespace_info->{module}}});
-        }
+  my $text;
+  if (defined $self->{_skip_until}
+      && $self->{_skip_until} eq $self->{_depth}) {
+    undef $self->{_skip_until};
+    $text = $self->{_text};
+    $self->{_text} = '';
+  }
 
-        # pop attribs and code block.
-        my $attribs = shift (@{$parser->{_attribs}});
-        my $code    = shift (@{$parser->{_code}});
+  if (! defined $self->{_skip_until}) {
+    # Get namespace info for the current element type.
+    # If namespace info is defined, call the element subroutine.
+    my $namespace = $element->{NamespaceURI};
 
-        # Call the module sub.
-        if ($element_info->{content} eq 'empty') {
-          $parser->{_code}->[0] .= $object->$type (undef, $attribs);
-        } elsif ($element_info->{content} eq 'text') {
-          $parser->{_code}->[0] .= $object->$type ($text, $attribs);
-        } else {
-          $parser->{_code}->[0] .= $object->$type ($code, $attribs);
-        }
-        die $@ if $@;
+    # Remove namespaces.
+    shift (@{$self->{_namespaces}});
 
-        undef ($object);
+    my $namespace_info = $self->get_namespace_info ($namespace);
+    if (defined $namespace_info) {
+      my $name = $element->{LocalName};
 
+      # Get element object.  If element is not nested, pop the object
+      # out of the cache.
+      my $object;
+      if (defined $self->get_element_info ($namespace, $name, 'nestedin')) {
+        $object = $self->{_objects}->{$namespace_info->{module}}->[0];
       } else {
-        $parser->{_code }->[0] .= "\$process->print ('</$type>');\n";
+        $object = shift (@{$self->{_objects}->{$namespace_info->{module}}});
       }
 
+      # Pop attribs and code block.
+      my $attribs = shift (@{$self->{_attribs}});
+      my $code    = shift (@{$self->{_code}});
+
+      # Call module sub.
+      my ($content) = $self->get_element_info ($namespace, $name, 'content');
+      if ($content eq 'empty') {
+        $self->{_code}->[0] .= $object->$name (undef, $attribs);
+      } elsif ($content eq 'text') {
+        $self->{_code}->[0] .= $object->$name ($text, $attribs);
+      } else {
+        $self->{_code}->[0] .= $object->$name ($code, $attribs);
+      }
+      die $@ if $@;
+
+      undef ($object);
+
     } else {
-      $parser->{_text} .= "</$type>";
+      my $text = $self->element_string (0, $element);
+      $self->{_code}->[0] .= "\$process->print ('$text');\n";
     }
+  } else {
+    my $text = $self->element_string (0, $element);
+    $self->{_text} .= $text;
   }
+
+  $self->{_depth}--;
 }
 
-sub Char {
-  my $parser = shift;
-  $parser->{Text} .= shift;
-}
+=pod
 
-sub Text {
-  my $parser = shift;
+=head2 characters
 
-  my $self = $parser->{_self};
+This method is invoked for each chunk of character data.  The following 
+algorithm is used to parse character data:
 
-  my $text = $parser->{Text};
+  - If not skipping
+    - Generate code to print text, append to code private data.
+  - Else
+    - Append character data to text private data.
 
-  if (! defined $parser->{_skip_until}) {
+=cut
+
+sub characters {
+  my $self = shift;
+  my $chars = shift;
+
+  my $text = $chars->{Data};
+  my $n = ($text =~ tr/\n//);
+  $self->{_line} += $n;
+
+  if (! defined $self->{_skip_until}) {
     $text = $self->{_string}->text ($text);
-#    $text =~ s/@/\\@/g; 
-
     # Force $text into a scalar context so variable returning will work
     # properly.
-    if ($text ne '') {
-      $parser->{_code}->[0] .= "\$process->print (scalar ($text));\n";
-    }
-
+    $self->{_code}->[0] .= "\$process->print (scalar ($text));\n" if $text ne '';
   } else {
-    $parser->{_text} .= $text;
+    $self->{_text} .= $text;
   }
-
-  $parser->{Text} = '';
 }
+
+=pod
+
+=head2 end_document
+
+This method is invoked at the end of the document.  It returns a string 
+containing the Perl code representation of the parsed XML document.
+
+=cut
+
+sub end_document {
+  my $self = shift;
+  my $doc = shift;
+
+  my $code = $self->{_code}->[0];
+  $code = qq{
+sub {
+  my \$process = shift;
+
+  my \$vars = \$process->{_vars};
+$code
+}
+  };
+
+  return $code;
+}
+
+=pod
+
+=head1 AUTHOR
+
+Jonathan Waxman
+<jowaxman@bbl.med.upenn.edu>
+
+=head1 COPYRIGHT
+
+Copyright (c) 2002-2003 Jonathan A. Waxman
+All rights reserved.
+
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+=cut
 
 
 1;
