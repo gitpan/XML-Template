@@ -1,0 +1,37 @@
+<html>
+<head>
+<title>Sample XML::Template HTML page</title>
+</head>
+<body>
+
+<template>
+
+Current Date: <include src="header.html"/>
+
+<!-- Inside the template tags, the parser will substitute variables -->
+
+<pre>This should say "ok" --&gt;</pre> $(ok)
+<pre>This too "ok" --&gt;</pre> $(ok)
+
+<!-- Variables are escaped with () or {} -->
+<!-- They consist of upper and lowercase letters as well as underscores -->
+
+${still_ok} 4
+
+<repeat name="RESULTS">
+${NUMBER}. <a href="${URL}">$(TITLE)</a> <br>
+$(EXCERPT)
+</repeat>
+
+<with name="ENV">
+Server Version: ${SERVER_VERSION}<br>
+Script Name: ${SCRIPT_NAME}<br>
+</with>
+
+</template>
+
+
+<!-- Outside the template tags, nothing is parsed -->
+
+</body>
+</html>

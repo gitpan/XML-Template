@@ -1,0 +1,91 @@
+XML::Template - Simple Text Templates using XML Tags
+
+Copyright (c) 1999 Geoffrey R. Hutchison
+
+You may distribute under the terms of either the GNU General Public 
+License or the Artistic License, as specified in the Perl README file.
+For use with Apache httpd and mod_perl, see also Apache copyright.
+
+THIS PACKAGE IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED 
+WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF 
+MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+
+OVERVIEW
+
+I don't pretend that this is a unique idea. There are *many* Perl
+template systems. What separates this one from the pack (AFAIK) is
+that it supports more than just variable substituion. Using XML
+markup, you can include other template files, perform simple variable
+assignment, nested namespaces, and best of all, perform simple looping
+constructs. For kicks, it also offers the CGI environment variables as
+builtins, as well as the server's current date, time and date/time string.
+
+In short the module offers what I see as the 80/20 rule. It doesn't
+allow full Perl constructs (see something like ePerl or HTML::Embperl
+for that) but implements the 20% of the features that make up 80% of
+the needs for templates.
+
+It also serves as an excellent pre-processor for either ePerl or
+HTML::Embperl or the like. ;-)
+
+BTW, The code is not limited to parsing XML documents. It works on any text
+document, but is labeled as an XML template system because it uses XML
+tags for the template markup. 
+
+
+DOCUMENTATION
+
+The Template.pm file contains the perldoc documentation. I won't
+repeat it here since this may become outdated. Simply call perldoc on it:
+
+perldoc Template.pm
+
+
+EXAMPLES
+
+The example/ directory contains some example template files. The .xmlt
+files are used by the test script. The .html files are some examples
+as to how the templates might be used in an HTML setting.
+
+In addition the t/example.t script contains a sample of how to call the
+parser. Here's the two-liner:
+
+        my $interp = XML::Template->new("./examples");
+        print $interp->compose(\%namespace, "example.xmlt");
+
+Here "./examples" is the directory to use for reading templates (and
+template includes). Then in the compose, \%namespace is a reference to
+the hash to use for variable interpolation and example.xmlt is the
+sample file.
+
+
+FEEDBACK and BUG REPORTS
+
+Obviously, please let me know if you find this module useful. Bug reports,
+questions, feature suggestions, patches, etc. are quite
+welcome. Opinions on performance issues would be greatly appreciated
+since I haven't tested it too much in "live" situations.
+
+
+THANKS
+
+This code was inspired by the template system outlined in a Wired
+WebMonkey article by Brian Slesinsky:  
+http://www.hotwired.com/webmonkey/code/97/21/index2a.html
+
+However, this code differs not only in the eventual template language
+outlined in the article, it is not based in anyway on the code
+mentioned in the article (available under a more restrictive license).
+
+Thanks are also necessary to eZiba.com, especially DeWitt Clinton
+<dewitt@eziba.com> for their feedback and for letting me develop this
+code on their dime.
+
+
+AUTHOR
+
+Geoff Hutchison <ghutchis@wso.williams.edu
+
+
+

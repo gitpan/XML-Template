@@ -1,0 +1,10 @@
+Changes
+MANIFEST
+Makefile.PL
+README
+Template.pm
+examples/example.xmlt
+examples/foobar.xmlt
+examples/header.html
+examples/results.html
+t/example.t
