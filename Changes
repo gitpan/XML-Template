@@ -1,5 +1,11 @@
 Revision history for Perl extension XML::Template.
 
+1.0.2  Sun Oct 10 10:19:21 1999
+	- Fixed include tags to allow including files in subdirectories.
+	- Added format option to change the format of error messages,
+	  contributed by Alberto Accomazzi <alberto@cfa0.harvard.edu>.
+	- Added support for nested namespaces in repeat or with tags
+	  also contributed by Alberto Accomazzi.
 1.0.1  Wed Jul 21 12:33:37 1999
 	- Added variableInclude tag to include a tag with variable filename
 	- Added support for repeats through arrays, contributed by

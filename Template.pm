@@ -25,7 +25,7 @@ use POSIX qw(strftime);
 
 use vars qw($VERSION);
 
-$VERSION = '1.0.1';
+$VERSION = '1.0.2';
 
 
 #####
@@ -38,16 +38,42 @@ sub version { $XML::Template::VERSION }
 # New (constructor)
 #
 # Pre: Argument is a path context for the template
+#      and optionally, a format for the error messages.
 # Post: Creates a new Template object
 sub new {
-    my($self, $path) = @_;
+    my $self = shift;
+    my $path = shift;
+    # Default format for XML/HTML applications
+    my $format = "<!-- %s -->\n";
 
-    bless { path => $path }, $self;
+    # Any remaining arguments are options
+    my $opt;
+    while ($opt = shift) {
+        if ($opt eq "format") {
+            $format = shift;
+        }
+    }
+    
+    bless { 
+        path => $path,
+        format => $format,
+    }, $self;
 }
 
 
 #####
-# Compose: This reads in the file and hands it off to interpret_text
+# Message: Returns the string message formatted as $self->{format}
+#
+# Pre: None
+# Post: As above
+sub message {
+    my $self = shift;
+
+    sprintf($self->{format}, @_);
+}
+
+#####
+# Compose: This reads in the file and hands it off to compose_string
 #
 # Pre: Argument is a hash of the data to fill the template and a filename
 # Post: Forms the template itself, printing it out
@@ -55,57 +81,72 @@ sub compose {
     my($self, $data, $file) = @_;
 
     if (!defined $file) {
-        return "<!-- Template file not defined -->\n";
+        return $self->message("Template file not defined");
     }
     if (!defined $self->{path}) {
-	return "<!-- Template path not defined -->\n";
+        return $self->message("Template path not defined");
     }
 
     # This will construct the text to be returned
     $self->{out} = "";
 
     my $filename = "$self->{path}/$file";
-    if (-f $filename) {
-	unless( open (FILE, $filename) ) {
-	    return "<!-- Template file $filename not readable: $! -->\n";
-	}
-	local($/) = undef;
-	my $text = <FILE>;
-	close(FILE);
+    unless (-f $filename) {
+	return $self->message("Template file $filename not found: $!");
+    }
+    unless( open (FILE, $filename) ) {
+	return $self->message("Template file $filename not readable: $!");
+    }
+    local($/) = undef;
+    my $text = <FILE>;
+    close(FILE);
+
+    return $self->compose_string($data, $text);
 	
-	# Split into tokens based on <template></template> tags
-	# Doesn't really require it to be well-formed, just that it begins...
-	my @tokens = split /(<\/?template>)/sixo, $text;
-
-	my $in_context = 0;
-
-	while ( scalar(@tokens) ) {
-	    
-	    my $token = @tokens->[0];
-
-	    if ( $token eq "<template>" ) {
-		$in_context = 1;
-	    } elsif ( $token eq "<\/template>" ) {
-		$in_context = 0;
-	    } else {
-		if ( $in_context ) { 	    # pass this to be interpreted
-		    $self->recursive_interpret($token, $data);
-		} else {	    # uninterpreted text
-		    $self->{out} .= $token;
-		}
-	    } # end if($token)
-
-	    shift @tokens;
-	} # end while
-
-	# Join the warnings and the output from the recursive_interpret
-	my $out = $self->{out};
-	$self->{out} = undef;
-	return $out;
-    } # end if(file)
-
-    return "<!-- Template file $filename not readable: $! -->\n";
 } # end compose
+
+#####
+# Compose_string: parses input text into tokens and hands them off to
+#                 recursive_interpret
+#
+# Pre: Argument is a hash of the data to fill the template and a string
+# Post: Forms the template itself, printing it out
+sub compose_string {
+    my($self, $data, $text) = @_;
+
+    # set top-level context
+    $self->{top} = $data;
+
+    # Split into tokens based on <template></template> tags
+    # Doesn't really require it to be well-formed, just that it begins...
+    my @tokens = split /(<\/?template>)/sio, $text;
+    
+    my $in_context = 0;
+    
+    while ( scalar(@tokens) ) {
+	
+	my $token = shift(@tokens);
+	
+	if ( $token =~ /^<template>$/io ) {
+	    $in_context = 1;
+	} elsif ( $token =~ /^<\/template>$/io ) {
+	    $in_context = 0;
+	} else {
+	    if ( $in_context ) { 	    # pass this to be interpreted
+		$self->recursive_interpret($token, $data);
+	    } else {	    # uninterpreted text
+		$self->{out} .= $token;
+	    }
+	} # end if($token)
+	
+    } # end while
+    
+    # Join the warnings and the output from the recursive_interpret
+    my $out = $self->{out};
+    $self->{out} = undef;
+    return $out;
+
+} # end compose_string
 
 
 ######
@@ -120,59 +161,58 @@ sub recursive_interpret{
 
     while ( scalar(@tokens) ) {
     
-	my $token = @tokens->[0];
+	my $token = shift(@tokens);
 	my $tokenMatch; # The part of the token that we want (usually an attribute)
 
 	if ( $tokenMatch = $self->match_variable($token) ) {
 	    # $tokenMatch contains the name of the variable
 	    $self->do_variable($data, $tokenMatch);
-	    shift @tokens;
 
 	} elsif ( $tokenMatch = $self->match_assign($token) ) {
 	    # Now we have to match the value, the name is in tokenMatch
 	    $self->do_assign($data, $tokenMatch, $token);
-	    shift @tokens;
 
 	} elsif ( $tokenMatch = $self->match_include($token) ) {
 	    # $tokenMatch contains the filename to include
 	    $self->do_include($data, $tokenMatch);
-            shift @tokens;
 
 	} elsif ( $tokenMatch = $self->match_variableInclude($token) ) {
 	    # $tokenMatch contains the variable name containing the file
 	    $self->do_variableInclude($data, $tokenMatch);
-            shift @tokens;
 
 	} elsif ( $tokenMatch = $self->match_repeat($token) ) {
 	    # First we have to find the ending </repeat> tag
 	    # Right now this happens by joining then splitting
-	    shift @tokens;
 	    $text = join '', @tokens;
-	    my @context = split /<\/repeat>/iso, $text;
-	    # Perform the repeat
-	    $self->do_repeat(@context->[0], $data->{$tokenMatch});
-	    # Restore token list at the point *after* the </repeat>
-	    shift @context;
-	    $text = join '</repeat>', @context;
+	    my @context = split /(<\/?repeat[^>]*>)/iso, $text;
+	    my $context;
+	    ($context, @context) =  $self->context('repeat', @context);
+	    # Assign the hash context based on the token
+	    my $hash = $self->set_hash($data, $tokenMatch);
+            # Perform the repeat
+	    $self->do_repeat($context, $hash);
+            # Restore token list at the point *after* the </repeat>
+	    $text = join '', @context;
 	    @tokens = $self->tokenize($text);
 
 	} elsif ( $tokenMatch = $self->match_with($token) ) {
 	    # First we have to find the ending </with> tag
 	    # Right now this happens by joining, then splitting for it.
-	    shift @tokens;
 	    $text = join '', @tokens;
-	    my @context = split /<\/with>/iso, $text;
+	    my @context = split /(<\/?with[^>]*>)/iso, $text;
+	    my $context;
+	    ($context, @context) =  $self->context('with', @context);
+	    # Assign the hash context based on the token
+	    my $hash = $self->set_hash($data, $tokenMatch);
 	    # Perform the with
-	    $self->do_with(@context->[0], $data->{$tokenMatch}, $tokenMatch);
+	    $self->do_with($context, $hash);
 	    # Restore the token list at the point *after* the </with>
-	    shift @context;
-	    $text = join '</with>', @context;
+	    $text = join '', @context;
 	    @tokens = $self->tokenize($text);
 
 	} else {
 	    # plain text (here it's something we couldn't figure out)
 	    $self->{out} .= $token;
-	    shift @tokens;
 
 	} # end if($token)	
     } # end while(tokens)
@@ -186,7 +226,7 @@ sub recursive_interpret{
 # Post: Returns the list of tokens
 sub tokenize{
     my ($self, $text) = @_;
-    split ( /(
+    split ( m/(
 	      # variable
 	      \$\([^)]*\)
 	      # variable
@@ -194,7 +234,7 @@ sub tokenize{
 	      # assign tag
 	      | <assign [^\/]*\/>
 	      # include tag
-	      | <include [^\/]*\/>
+	      | <include [^"]+\"[^"]+\"[^\/]*\/>
 	      # variableInclude tag
 	      | <variableInclude [^\/]*\/>
 	      # repeat context
@@ -235,14 +275,14 @@ sub do_variable{
     } else { 
 	# not in the namespace, 
 	# so try to match "magic" tokens NOW, DATE, and TIME
-	if ( $variable =~ /^now$/i ) {
+	if ( $variable =~ /^now$/io ) {
 	    $self->{out} .= localtime;
-	} elsif ( $variable =~ /^date$/i ) {
+	} elsif ( $variable =~ /^date$/io ) {
 	    $self->{out} .= strftime("%x",localtime);
-	} elsif ( $variable =~ /^time$/i ) {
+	} elsif ( $variable =~ /^time$/io ) {
 	    $self->{out} .= strftime("%X",localtime);
 	} else {
-	    $self->{out} .= "<!-- Variable $variable not found -->\n";
+	    $self->{out} .= $self->message("Variable $variable not found");
 	    $self->{out} .= $variable;
 	} #if NOW, DATE, TIME
     }
@@ -251,7 +291,7 @@ sub do_variable{
 #####
 # Match_Assign: Does the token match an <assign ...> tag?
 #
-# Pre: Passed the toekn to check
+# Pre: Passed the token to check
 # Post: Returns the variable name if it matches, undef otherwise
 sub match_assign{
     my ($self, $token) = @_;
@@ -276,7 +316,7 @@ sub do_assign{
     if ( $token =~ /^<assign.*?\s+value=\"(.+?)\".*?\/>$/io) {
 	$data->{$variable} = $1;
     } else {
-	$self->{out} .= "<!-- Assign to $variable didn't have a value --> \n";
+	$self->{out} .= $self->message("Assign to $variable didn't have a value");
 	$self->{out} .= $token;
     }
 }
@@ -291,7 +331,7 @@ sub match_include{
     my ($self, $token) = @_;
     
     # token must start with <include ... src="..."  ... />
-    if ( $token =~ /^<include.*?\s+src=\"(.+)\"[^\/]*\/>$/io) {
+    if ( $token =~ /^<include.*?\s+src=\"([^"]+)\"[^\/]*\/>$/io) {
 	return $1;
     } else {
   	return undef;
@@ -311,10 +351,10 @@ sub do_include{
     # But we never want to go outside of the defined $self->{path} 'jail'
     # for security reasons (even if we want to allow subdirectories of it)
     if ( $rawFilename =~ /^\//o) {
-	$self->{out} .= "<!-- Template file $rawFilename not allowed -->\n";
+	$self->{out} .= $self->message("Template file $rawFilename not allowed");
 	return;
     } elsif ( $rawFilename =~ /\.\./o) {
-	$self->{out} .= "<!-- Template file $rawFilename not allowed -->\n";
+	$self->{out} .= $self->message("Template file $rawFilename not allowed");
 	return;
     }
 
@@ -329,7 +369,7 @@ sub do_include{
 	# recurse on the included file
 	$self->recursive_interpret($include_text, $data);
     } else {
-	$self->{out} .= "<!-- Template file $filename not readable: $! -->\n";
+	$self->{out} .= $self->message("Template file $filename not readable: $!");
     }
 }
 
@@ -365,7 +405,7 @@ sub do_variableInclude{
 
 	$self->do_include($data, $filename);
     } else { 
-	$self->{out} .= "<!-- VariableInclude variable $variable not found -->\n";
+	$self->{out} .= $self->message("VariableInclude variable $variable not found");
     }
 }
 
@@ -400,20 +440,34 @@ sub do_repeat{
 	if ( defined $data && ref($data) eq "HASH" ) {
 	    my $key;
 	    foreach $key ( sort (keys %{$data} ) ) {
-		$self->recursive_interpret($text, $data->{$key});
+		my $hash = $data->{$key};
+                # check reference to avoid fatal later on -- AA
+                unless (ref($hash) eq "HASH") {
+                    $self->{out} .= 
+                        $self->message("Nested key '$key' not a hash ref!");
+                   $hash = {};
+                }
+                $self->recursive_interpret($text, { "_" => $key, %{$hash} });
 	    }
 	#-- feh : 17.07.1999 : added ARRAY support
 	#
 	} elsif ( defined $data && ref($data) eq "ARRAY" ) {
-	    foreach my $hash_data ( @{$data} ) {
-		$self->recursive_interpret($text, $hash_data);
+	    my $key = 0; # Arrays indexed from 0
+	    foreach my $hash ( @{$data} ) {
+                # check reference to avoid fatal later on -- AA
+                unless (ref($hash) eq "HASH") {
+                    $self->{out} .= 
+                        $self->message("Array element '$key' not a hash ref!");
+                    $hash = {};
+                }
+                $self->recursive_interpret($text, { "_" => $key++, %{$hash} });
 	    }
 	} else {
-	    $self->{out} .= "<!-- Repeat namespace does not exist! -->\n";
+	    $self->{out} .= $self->messsage("Repeat namespace does not exist!");
 	    $self->{out} .= $text;
 	}
     } else {
-	$self->{out} .= "<!-- Repeat context left empty -->\n";
+	$self->{out} .= $self->message("Repeat context left empty");
 	$self->{out} .= $text;
     }
     
@@ -443,27 +497,115 @@ sub match_with{
 # Pre: Passed the text to be used, a hash of data and the context name
 # Post: Places the recursively-parsed text or an error message into $self->{out}
 sub do_with{
-    my ($self, $text, $data, $tokenMatch) = @_;
+    my ($self, $text, $data) = @_;
 
     if ( defined $text ) {
 	# do we actually have a hash to enter?
 	if ( defined $data && ref($data) eq "HASH" ) {
 	    $self->recursive_interpret($text, $data);
-	} elsif ( $tokenMatch =~ /^env$/i ) {
-	    # OK, so it wasn't defined, but maybe it's the magic "ENV" namespace
-	    $self->recursive_interpret($text, \%ENV);
 	} else {
 	    # Nope, we don't have anything useful...
-	    $self->{out} .= "<!-- With namespace does not exist -->\n";
+	    $self->{out} .= $self->message("With namespace does not exist");
 	    $self->{out} .= $text;
 	}
     } else {
-	$self->{out} .= "<!-- With context left empty. -->\n";
+	$self->{out} .= $self->message("With context left empty.");
 	$self->{out} .= $text;
     }
 
 }
 
+#####
+# Context: Find the context of data
+#
+# Pre: Passed the context type and array of splitted data
+# Post: Returns the context and remaing data
+sub context {
+    my ($self, $tag, @tokens) = @_;
+
+    $tag = $1 if $tag =~ m:^\s*</?(\w+):s;
+    my $context = "";
+    my $sub_lvl = 0;
+  WHILE:
+    while( @tokens ) {
+	my $t = shift @tokens;
+	++$sub_lvl if $t =~ m:^\s*<$tag:s;
+	if ( $t =~ m:^\s*</$tag>\s*:s ) {
+	    if( $sub_lvl ) {
+		--$sub_lvl;
+	    }else{
+		$t =~ s:</$tag>::ms; 
+		$context .= $t;
+		last WHILE;
+	    }
+	}
+	$context .= $t;
+    } # end while
+    return ($context, @tokens);
+}
+
+#####
+# Set_hash: Returns a reference to a hash pointing to the data structure
+# relative to path
+#
+# Pre: Passed the text to be used, a hash of data and the context name
+# Post: Places the recursively-parsed text or an error message into $self->{out}
+#
+# The syntax for a context path is a la XQL/XSL:
+#     "/top/mid/bot"   => $namespace->{top}->{mid}->{bot}
+#     "this/that"      => $current->{this}->{that}
+#     "../above/below" => not supported (yet)
+# arrays are supported by using digits in path segments
+# (note that initial index array is set to 1 rather than 0):
+#     "/foo/2/bar"     => $namespace->{foo}->[1]->{bar}
+# Context is reset to top level if path consists of a slash or an empty string
+sub set_hash {
+    my $self = shift;
+    my ($hash, $path) = @_;
+    my $context = $hash;
+
+    if ($path =~ /^env$/io) {
+        # OK, so it wasn't defined, but maybe it's the magic "ENV" namespace
+        $context = \%ENV;
+	
+    } elsif ($path =~ /^\s*\/\s*$/o) {
+        # reset path to top of hash structure
+        $context = $self->{top};
+
+    } elsif ($path =~ /^\s*$/o) {
+        # assume equivalent to "/" and issue a warning
+        $self->{out} .= $self->message("Assuming top-level context for null path");
+        $context = $self->{top};
+
+    } elsif ($path) {
+        # reset context to top of tree if path begins with "/"
+        my @tree = split(m:/+:, $path);
+        $context = $tree[0] ? $hash : $self->{top};
+        while (@tree and $context and ref($context)) {
+            my $el = shift(@tree);
+            next unless $el;
+            if (ref($context) eq "ARRAY" and $el =~ /^\d+$/o and
+                defined($context->[$el-1])) {
+                $context = $context->[$el-1];
+            } elsif (ref($context) eq "HASH" and 
+                     defined($context->{$el})) {
+                $context = $context->{$el};
+            } else {
+                $context = undef;
+                last;
+            }
+        } # end while
+    } #end if (type of token)
+
+    if (defined $context and 
+        (ref($context) eq "HASH" or ref($context) eq "ARRAY")) {
+        return $context;
+    } else {       
+        # Nope, we don't have anything useful...
+        $self->{out} .= $self->message("Context path '$path' does not exist!");
+        return undef;
+    }   
+} # end set_hash
 
 1;
 __END__
@@ -480,8 +622,9 @@ XML::Template - Perl XML template instantiation
 	      foo => "bar",
   );
 
- my $interp = XML::Template->new("examples");
+ my $interp = XML::Template->new("examples", format => "<!-- %s -->");
  print $interp->compose(\%namespace, "example.xmlt");
+ print $interp->compose_string(\%ns,"<template>${foo}</template>");
 
  <template>
     $(var) or ${var}
@@ -494,7 +637,8 @@ XML::Template - Perl XML template instantiation
     <variableInclude name="foobar"/>
 
     <repeat name="RESULTS">
-      ${NUMBER}: ${RESULT}
+    hash key: ${_} 
+    ${NUMBER}: ${RESULT}
     </repeat>
     
     <with name="nested_hash">
@@ -528,9 +672,20 @@ for that) but implements the 20% of the features that make up 80% of
 the needs for templates. It also serves as an excellent pre-processor
 for either ePerl or HTML::Embperl or the like. ;-)
 
-To call it, simply call as shown in the synopsis. Pass it a directory
-when calling new() and data and a file when calling
-compose. Any text inside any <template></template> tags will be
+To call it, simply call as shown in the synopsis. 
+Arguments to new() are a directory where all XML template files are rooted
+possibly followed by an associative array of additional options.  
+The ones currently supported are:
+
+ format => FMT   
+   use FMT to format output messages produced by the parser; FMT
+   is specified using the standard sprintf formats and defaults to 
+   "<!-- %s -->\n"
+
+The functions compose() and compose_string() take a hash reference
+and a filename (compose) or a string (compose_string) to parse and
+interpolate according to the hash.
+Any text inside any <template></template> tags will be
 interpreted. The remaining text will be completely ignored, useful for
 those situations where you want to use '$' characters, or simply want
 the parser to run faster.
@@ -549,12 +704,26 @@ $(variable) or ${variable} -- identifiers are word characters
 <assign name="variable" value="..."/> -- assign "..." to identifier "variable"
 <assign value="..." name="variable"/>
 
-<with name="nested"></with> -- use the nested hash for variable substitution
+<with name="nested"></with> -- use the nested hash for variable substitution.
 
-<repeat name="repeated"></repeat> -- repeat for every item in nested hash
+<repeat name="nested"></repeat> -- repeat for every item in nested hash.
+If no name attribute is given, the items are selected from the root namespace.
 
-In addition, the <with> tag supports ENV for including environment
-variables, and variable substitution supports DATE, TIME, and NOW,
+The syntax for the namespaces specified with the "name" 
+attribute of the <with> and <repeat> tags follow a syntax similar to XQL/XSL:
+
+  "/"              => root namespace $root
+  "/top/mid/bot"   => $root->{top}->{mid}->{bot}
+  "this/that"      => $current->{this}->{that}
+  "../above/below" => not supported (yet)
+  "ENV"            => environment variables
+
+Anonymous arrays in the namespace structure are supported by using
+digits in path segments (note that initial index array is 0):
+
+   "/foo/2/bar"    => $root->{foo}->[0]->{bar}
+
+In addition, variable substitution supports DATE, TIME, and NOW,
 the system's default date, time, and date-time strings.
 
 =head1 AUTHOR

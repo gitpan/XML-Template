@@ -6,6 +6,7 @@ Template.pm
 examples/example.xmlt
 examples/foobar.xmlt
 examples/header.html
+examples/include/ok.xmlt
 examples/ok.xmlt
 examples/results.html
 examples/with.xmlt
