@@ -5,7 +5,7 @@
 #
 # Inspired by all the other template systems out there...
 #
-# Copyright (c) 1999 Geoffrey R. Hutchison <ghutchis@wso.williams.edu>
+# Copyright (c) 1999-2000 Geoffrey R. Hutchison <ghutchis@wso.williams.edu>
 #
 # <legal>
 # You may distribute under the terms of either the GNU General Public 
@@ -25,7 +25,7 @@ use POSIX qw(strftime);
 
 use vars qw($VERSION);
 
-$VERSION = '1.0.2';
+$VERSION = '1.0.3';
 
 
 #####
@@ -463,7 +463,7 @@ sub do_repeat{
                 $self->recursive_interpret($text, { "_" => $key++, %{$hash} });
 	    }
 	} else {
-	    $self->{out} .= $self->messsage("Repeat namespace does not exist!");
+	    $self->{out} .= $self->message("Repeat namespace does not exist!");
 	    $self->{out} .= $text;
 	}
     } else {

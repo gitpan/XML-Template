@@ -1,5 +1,8 @@
 Revision history for Perl extension XML::Template.
 
+1.0.3  Thu Feb 24 22:01:59 2000
+	- Fixed typo where $self->message() was called
+	  incorrectly. Thanks to Volker Heitz <volker@heitz.de>.
 1.0.2  Sun Oct 10 10:19:21 1999
 	- Fixed include tags to allow including files in subdirectories.
 	- Added format option to change the format of error messages,
